@@ -1,0 +1,105 @@
+import { LibreBaskerville_400Regular } from '@expo-google-fonts/libre-baskerville';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useFonts } from 'expo-font';
+import { Stack, useRouter, useSegments } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
+import { StatusBar } from 'expo-status-bar';
+import { useEffect } from 'react';
+import { StyleSheet } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+
+import { colors } from '../src/design/tokens';
+import { AuthProvider, useAuth } from '../src/providers/auth-provider';
+
+SplashScreen.preventAutoHideAsync().catch(() => {
+  // Ignore duplicate splash calls during fast refresh.
+});
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnReconnect: true,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
+export default function RootLayout() {
+  const [fontsLoaded] = useFonts({
+    LibreBaskerville_400Regular,
+  });
+
+  return (
+    <GestureHandlerRootView style={styles.root}>
+      <SafeAreaProvider>
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <RootNavigator fontsLoaded={fontsLoaded} />
+          </AuthProvider>
+        </QueryClientProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
+  );
+}
+
+function RootNavigator({ fontsLoaded }: { fontsLoaded: boolean }) {
+  const router = useRouter();
+  const segments = useSegments();
+  const { status } = useAuth();
+
+  useEffect(() => {
+    if (!fontsLoaded || status === 'loading') {
+      return;
+    }
+
+    const activeGroup = segments[0];
+
+    if (status === 'authenticated' && activeGroup !== '(app)') {
+      router.replace('/');
+      return;
+    }
+
+    if (status === 'unauthenticated' && activeGroup !== '(auth)') {
+      router.replace('/login');
+    }
+  }, [fontsLoaded, router, segments, status]);
+
+  useEffect(() => {
+    if (fontsLoaded && status !== 'loading') {
+      SplashScreen.hideAsync().catch(() => {
+        // Ignore splash errors on repeated hides.
+      });
+    }
+  }, [fontsLoaded, status]);
+
+  if (!fontsLoaded || status === 'loading') {
+    return null;
+  }
+
+  return (
+    <>
+      <StatusBar style="light" backgroundColor={colors.background} />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          animation: 'fade',
+          contentStyle: {
+            backgroundColor: colors.background,
+          },
+        }}
+      >
+        <Stack.Screen name="(auth)" />
+        <Stack.Screen name="(app)" />
+      </Stack>
+    </>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+});
