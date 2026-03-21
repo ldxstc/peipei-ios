@@ -55,6 +55,8 @@ export default function LoginScreen() {
         <View style={styles.card}>
           <Text style={styles.label}>Email</Text>
           <TextInput
+            accessibilityHint="Enter the email address for your PeiPei account."
+            accessibilityLabel="Email"
             autoCapitalize="none"
             autoComplete="email"
             autoCorrect={false}
@@ -69,6 +71,8 @@ export default function LoginScreen() {
 
           <Text style={[styles.label, styles.labelSpacing]}>Password</Text>
           <TextInput
+            accessibilityHint="Enter your account password."
+            accessibilityLabel="Password"
             autoCapitalize="none"
             autoComplete="password"
             autoCorrect={false}
@@ -84,6 +88,8 @@ export default function LoginScreen() {
           {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
 
           <Pressable
+            accessibilityLabel="Sign in"
+            accessibilityRole="button"
             disabled={loginMutation.isPending}
             onPress={() => loginMutation.mutate()}
             style={({ pressed }) => [
@@ -99,7 +105,11 @@ export default function LoginScreen() {
             )}
           </Pressable>
 
-          <Link href="/register" style={styles.secondaryLink}>
+          <Link
+            accessibilityLabel="Go to registration"
+            href="/register"
+            style={styles.secondaryLink}
+          >
             Need an account? Register
           </Link>
         </View>

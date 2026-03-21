@@ -232,6 +232,7 @@ export default function SettingsScreen() {
             <SectionCard title="Profile">
               <Text style={styles.fieldLabel}>Display Name</Text>
               <TextInput
+                accessibilityLabel="Display name"
                 onChangeText={setDisplayName}
                 placeholder="Your name"
                 placeholderTextColor={colors.muted}
@@ -262,6 +263,8 @@ export default function SettingsScreen() {
               />
 
               <Pressable
+                accessibilityLabel="Save profile changes"
+                accessibilityRole="button"
                 disabled={saveMutation.isPending}
                 onPress={() => saveMutation.mutate(undefined)}
                 style={({ pressed }) => [
@@ -295,6 +298,8 @@ export default function SettingsScreen() {
 
               <View style={styles.buttonRow}>
                 <Pressable
+                  accessibilityLabel="Sync Garmin data"
+                  accessibilityRole="button"
                   disabled={syncMutation.isPending}
                   onPress={() => syncMutation.mutate()}
                   style={({ pressed }) => [
@@ -307,6 +312,8 @@ export default function SettingsScreen() {
                 </Pressable>
 
                 <Pressable
+                  accessibilityLabel="Disconnect Garmin"
+                  accessibilityRole="button"
                   disabled={
                     !settingsQuery.data?.garmin.connected ||
                     disconnectMutation.isPending
@@ -331,6 +338,8 @@ export default function SettingsScreen() {
                 {customInstructions || 'No custom instructions yet.'}
               </Text>
               <Pressable
+                accessibilityLabel="Edit coach instructions"
+                accessibilityRole="button"
                 onPress={() => {
                   setInstructionsDraft(customInstructions);
                   setIsInstructionsModalVisible(true);
@@ -352,6 +361,8 @@ export default function SettingsScreen() {
               />
               {!settingsQuery.data?.billing.isPro ? (
                 <Pressable
+                  accessibilityLabel="Open pricing"
+                  accessibilityRole="button"
                   onPress={() => {
                     void openUrl(PRICING_URL);
                   }}
@@ -374,6 +385,8 @@ export default function SettingsScreen() {
                 }
               />
               <Pressable
+                accessibilityLabel="Sign out"
+                accessibilityRole="button"
                 onPress={() => {
                   void handleSignOut();
                 }}
@@ -390,6 +403,8 @@ export default function SettingsScreen() {
 
             <SectionCard title="Data">
               <Pressable
+                accessibilityLabel="Export data"
+                accessibilityRole="button"
                 onPress={() => {
                   void openUrl(WEB_SETTINGS_URL);
                 }}
@@ -402,6 +417,8 @@ export default function SettingsScreen() {
               </Pressable>
 
               <Pressable
+                accessibilityLabel="Delete account"
+                accessibilityRole="button"
                 onPress={confirmDeleteAccount}
                 style={({ pressed }) => [
                   styles.secondaryButton,
@@ -427,6 +444,7 @@ export default function SettingsScreen() {
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>Coach Instructions</Text>
             <TextInput
+              accessibilityLabel="Coach instructions"
               multiline
               onChangeText={setInstructionsDraft}
               placeholder="Tell PeiPei how you want the coach to respond."
@@ -438,6 +456,8 @@ export default function SettingsScreen() {
 
             <View style={styles.modalActions}>
               <Pressable
+                accessibilityLabel="Cancel editing coach instructions"
+                accessibilityRole="button"
                 onPress={() => setIsInstructionsModalVisible(false)}
                 style={({ pressed }) => [
                   styles.secondaryButton,
@@ -449,6 +469,8 @@ export default function SettingsScreen() {
               </Pressable>
 
               <Pressable
+                accessibilityLabel="Save coach instructions"
+                accessibilityRole="button"
                 disabled={saveMutation.isPending}
                 onPress={() => {
                   void handleSaveInstructions();
@@ -514,6 +536,9 @@ function OptionSelector<T extends string>({
 
         return (
           <Pressable
+            accessibilityLabel={option.label}
+            accessibilityRole="button"
+            accessibilityState={{ selected }}
             key={option.value}
             onPress={() => onChange(option.value)}
             style={({ pressed }) => [

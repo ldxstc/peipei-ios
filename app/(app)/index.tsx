@@ -18,6 +18,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import Animated, {
@@ -55,13 +56,95 @@ type DensityConfig = {
   spacing: number;
 };
 
+type CoachErrorPresentation = {
+  description: string;
+  primaryActionLabel: string;
+  requiresSignOut?: boolean;
+  title: string;
+};
+
 const MESSAGE_MAX_WIDTH = '82%';
+const MESSAGE_ACCESSIBILITY_PREVIEW_LENGTH = 90;
+const TABLET_BREAKPOINT = 960;
+
+function isNetworkFailure(error: unknown) {
+  return (
+    error instanceof Error &&
+    /network|internet|timed out|offline/i.test(error.message)
+  );
+}
+
+function getCoachErrorPresentation(error: unknown): CoachErrorPresentation {
+  if (error instanceof ApiError && error.status === 401) {
+    return {
+      description: 'Your session ended. Sign in again to continue the conversation.',
+      primaryActionLabel: 'Sign In Again',
+      requiresSignOut: true,
+      title: 'Session expired',
+    };
+  }
+
+  if (error instanceof ApiError && error.status >= 503) {
+    return {
+      description:
+        'PeiPei is temporarily unavailable. Give the coach a minute and try again.',
+      primaryActionLabel: 'Try Again',
+      title: 'Coach unavailable',
+    };
+  }
+
+  if (isNetworkFailure(error)) {
+    return {
+      description: 'Check your connection, then retry when you are back online.',
+      primaryActionLabel: 'Try Again',
+      title: 'Network error',
+    };
+  }
+
+  if (error instanceof ApiError) {
+    return {
+      description: error.message,
+      primaryActionLabel: 'Try Again',
+      title: 'Unable to load coach chat',
+    };
+  }
+
+  return {
+    description:
+      error instanceof Error
+        ? error.message
+        : 'The conversation could not be loaded right now.',
+    primaryActionLabel: 'Try Again',
+    title: 'Unable to load coach chat',
+  };
+}
+
+function buildMessageAccessibilityLabel(message: CoachMessage) {
+  const summary = (
+    message.messageType === 'social_post'
+      ? message.socialPost?.caption ?? message.content
+      : message.content
+  )
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MESSAGE_ACCESSIBILITY_PREVIEW_LENGTH);
+
+  if (message.messageType === 'social_post') {
+    return `Coach social post. ${summary}`;
+  }
+
+  return `${message.role === 'user' ? 'Your' : 'Coach'} message. ${summary}`;
+}
 
 export default function CoachScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { width } = useWindowDimensions();
   const { sessionCookie, signOut, user } = useAuth();
   const [composerValue, setComposerValue] = useState('');
+  const [composerError, setComposerError] = useState<CoachErrorPresentation | null>(
+    null,
+  );
   const [expandedMessageIds, setExpandedMessageIds] = useState<
     Record<string, true>
   >({});
@@ -94,6 +177,10 @@ export default function CoachScreen() {
     (left, right) =>
       new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
   );
+  const isTabletLayout = width >= TABLET_BREAKPOINT;
+  const chatErrorPresentation = chatQuery.error
+    ? getCoachErrorPresentation(chatQuery.error)
+    : null;
 
   useEffect(() => {
     if (!coachSidebarQuery.data) {
@@ -119,6 +206,17 @@ export default function CoachScreen() {
       workoutDistance: coachSidebarQuery.data.todayPlan.distance,
     });
   }, [coachSidebarQuery.data, displayMessages]);
+
+  useEffect(() => {
+    if (isTabletLayout && isSidebarOpen) {
+      setIsSidebarOpen(false);
+    }
+  }, [isSidebarOpen, isTabletLayout]);
+
+  function handleComposerChange(nextValue: string) {
+    setComposerError(null);
+    setComposerValue(nextValue);
+  }
 
   async function handleCopy(message: CoachMessage) {
     await Clipboard.setStringAsync(message.content);
@@ -313,6 +411,7 @@ export default function CoachScreen() {
     }));
 
     setComposerValue('');
+    setComposerError(null);
     setTransientMessages([...baseMessages, userMessage, assistantMessage]);
     setIsStreaming(true);
     setWaitingForFirstToken(true);
@@ -355,14 +454,15 @@ export default function CoachScreen() {
       setTransientMessages(null);
       setWaitingForFirstToken(false);
 
-      const message =
-        error instanceof ApiError
-          ? error.message
-          : error instanceof Error
-            ? error.message
-            : 'The message could not be delivered.';
+      const errorPresentation = getCoachErrorPresentation(error);
 
-      Alert.alert('Unable to send', message);
+      if (errorPresentation.requiresSignOut) {
+        Alert.alert(errorPresentation.title, errorPresentation.description);
+        await signOut();
+        router.replace('/login');
+      } else {
+        setComposerError(errorPresentation);
+      }
     } finally {
       setIsStreaming(false);
     }
@@ -383,223 +483,246 @@ export default function CoachScreen() {
     });
   }
 
-  if (chatQuery.isLoading) {
-    return (
-      <View style={styles.centered}>
-        <Stack.Screen options={{ headerShown: false }} />
-        <ActivityIndicator color={colors.text} size="large" />
-        <Text style={styles.loadingText}>Connecting to your coach...</Text>
-      </View>
-    );
-  }
-
-  if (chatQuery.error) {
-    const message =
-      chatQuery.error instanceof ApiError
-        ? chatQuery.error.message
-        : chatQuery.error instanceof Error
-          ? chatQuery.error.message
-          : 'The conversation could not be loaded.';
-
-    return (
-      <View style={styles.centered}>
-        <Text style={styles.errorTitle}>Unable to load coach chat</Text>
-        <Text style={styles.errorBody}>{message}</Text>
-        <Pressable
-          onPress={() => chatQuery.refetch()}
-          style={({ pressed }) => [
-            styles.retryButton,
-            pressed && styles.buttonPressed,
-          ]}
-        >
-          <Text style={styles.retryButtonText}>Try again</Text>
-        </Pressable>
-        <Pressable
-          onPress={() => void signOut()}
-          style={({ pressed }) => [
-            styles.ghostButton,
-            pressed && styles.buttonPressed,
-          ]}
-        >
-          <Text style={styles.ghostButtonText}>Sign out</Text>
-        </Pressable>
-      </View>
-    );
-  }
-
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={0}
-      style={styles.screen}
-    >
+    <View style={[styles.screen, isTabletLayout && styles.tabletShell]}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
-        <View>
-          <Text style={styles.headerEyebrow}>Coach</Text>
-          <Text style={styles.headerTitle}>
-            {user?.name ? `${user.name}'s long run` : 'Daily conversation'}
-          </Text>
-        </View>
-        <View style={styles.headerActions}>
-          <Pressable
-            accessibilityLabel="Open training data"
-            onPress={() => setIsSidebarOpen((current) => !current)}
-            style={({ pressed }) => [
-              styles.iconButton,
-              pressed && styles.buttonPressed,
-            ]}
-          >
-            <Ionicons color={colors.text} name="stats-chart-outline" size={18} />
-          </Pressable>
-          <Pressable
-            accessibilityLabel="Open settings"
-            onPress={() => {
-              setIsSidebarOpen(false);
-              router.push('/settings');
-            }}
-            style={({ pressed }) => [
-              styles.iconButton,
-              pressed && styles.buttonPressed,
-            ]}
-          >
-            <Ionicons color={colors.text} name="settings-outline" size={18} />
-          </Pressable>
-        </View>
-      </View>
-
-      <FlatList
-        contentContainerStyle={[
-          styles.listContent,
-          {
-            paddingBottom: spacing.xl,
-            paddingTop: spacing.lg,
-          },
-        ]}
-        data={displayMessages}
-        inverted
-        keyExtractor={(item) => item.id}
-        keyboardShouldPersistTaps="handled"
-        onRefresh={() => chatQuery.refetch()}
-        refreshing={chatQuery.isRefetching && !chatQuery.isLoading}
-        renderItem={({ item, index }) => {
-          const nextMessage = displayMessages[index + 1];
-          const density = getMessageDensity(item.createdAt);
-          const showDayLabel =
-            !nextMessage || !isSameCalendarDay(item.createdAt, nextMessage.createdAt);
-          const isExpanded = Boolean(expandedMessageIds[item.id]);
-          const canExpand = density.numberOfLines !== undefined;
-
-          return (
-            <MessageRow
-              dayLabel={showDayLabel ? formatDayLabel(item.createdAt) : null}
-              density={density}
-              isExpanded={isExpanded}
-              message={item}
-              onCopyCaption={() => runAction(() => handleCopy(item))}
-              onLongPress={() => {
-                if (item.messageType === 'social_post') {
-                  showSocialPostActionSheet(item);
-                  return;
-                }
-
-                if (item.role === 'assistant') {
-                  showCoachActionSheet(item);
-                  return;
-                }
-
-                runAction(() => handleCopy(item));
-              }}
-              onPress={() => {
-                if (canExpand) {
-                  toggleExpanded(item.id);
-                }
-              }}
-              onSaveImage={() => runAction(() => handleSaveSocialImage(item))}
-              onShareImage={() => runAction(() => handleShareSocialImage(item))}
-              showTypingIndicator={
-                waitingForFirstToken &&
-                isStreaming &&
-                item.role === 'assistant' &&
-                item.content.length === 0
-              }
-            />
-          );
-        }}
-        style={styles.list}
-        ListEmptyComponent={
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>No coach messages yet</Text>
-            <Text style={styles.emptyBody}>
-              Start the conversation below and PeiPei will respond in real time.
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={0}
+        style={[styles.conversationPane, isTabletLayout && styles.tabletConversation]}
+      >
+        <View style={[styles.header, { paddingTop: insets.top + spacing.md }]}>
+          <View>
+            <Text style={styles.headerEyebrow}>Coach</Text>
+            <Text style={styles.headerTitle}>
+              {user?.name ? `${user.name}'s long run` : 'Daily conversation'}
             </Text>
           </View>
-        }
-        refreshControl={
-          <RefreshControl
-            onRefresh={() => chatQuery.refetch()}
-            refreshing={chatQuery.isRefetching && !chatQuery.isLoading}
-            tintColor={colors.text}
-          />
-        }
-      />
-
-      <View
-        style={[
-          styles.composerContainer,
-          {
-            paddingBottom: Math.max(insets.bottom, spacing.md),
-          },
-        ]}
-      >
-        <View style={styles.composer}>
-          <Pressable
-            onPress={() => void handleAttachment()}
-            style={({ pressed }) => [
-              styles.attachmentButton,
-              pressed && styles.buttonPressed,
-            ]}
-          >
-            <Text style={styles.attachmentButtonText}>+</Text>
-          </Pressable>
-
-          <TextInput
-            multiline
-            onChangeText={setComposerValue}
-            placeholder="Tell PeiPei how the legs feel..."
-            placeholderTextColor={colors.muted}
-            style={styles.composerInput}
-            value={composerValue}
-          />
-
-          <Pressable
-            disabled={!composerValue.trim() || isStreaming}
-            onPress={() => void handleSend()}
-            style={({ pressed }) => [
-              styles.sendButton,
-              pressed && styles.buttonPressed,
-              (!composerValue.trim() || isStreaming) && styles.buttonDisabled,
-            ]}
-          >
-            {isStreaming ? (
-              <ActivityIndicator color={colors.text} size="small" />
-            ) : (
-              <Text style={styles.sendButtonText}>Send</Text>
-            )}
-          </Pressable>
+          <View style={styles.headerActions}>
+            {!isTabletLayout ? (
+              <Pressable
+                accessibilityHint="Opens the training summary panel."
+                accessibilityLabel="Open training data"
+                accessibilityRole="button"
+                onPress={() => setIsSidebarOpen((current) => !current)}
+                style={({ pressed }) => [
+                  styles.iconButton,
+                  pressed && styles.buttonPressed,
+                ]}
+              >
+                <Ionicons color={colors.text} name="stats-chart-outline" size={18} />
+              </Pressable>
+            ) : null}
+            <Pressable
+              accessibilityHint="Opens your profile, Garmin, billing, and account settings."
+              accessibilityLabel="Open settings"
+              accessibilityRole="button"
+              onPress={() => {
+                setIsSidebarOpen(false);
+                router.push('/settings');
+              }}
+              style={({ pressed }) => [
+                styles.iconButton,
+                pressed && styles.buttonPressed,
+              ]}
+            >
+              <Ionicons color={colors.text} name="settings-outline" size={18} />
+            </Pressable>
+          </View>
         </View>
-      </View>
 
-      <CoachDataSidebar
-        bottomInset={insets.bottom}
-        isOpen={isSidebarOpen}
-        onClose={() => setIsSidebarOpen(false)}
-        onOpen={() => setIsSidebarOpen(true)}
-        sessionCookie={sessionCookie}
-        topInset={insets.top}
-      />
-    </KeyboardAvoidingView>
+        {chatQuery.isLoading ? (
+          <CoachLoadingState />
+        ) : chatErrorPresentation ? (
+          <CoachErrorStateCard
+            errorPresentation={chatErrorPresentation}
+            onPrimaryAction={async () => {
+              if (chatErrorPresentation.requiresSignOut) {
+                await signOut();
+                router.replace('/login');
+                return;
+              }
+
+              await chatQuery.refetch();
+            }}
+            onSecondaryAction={
+              chatErrorPresentation.requiresSignOut
+                ? undefined
+                : async () => {
+                    await signOut();
+                    router.replace('/login');
+                  }
+            }
+          />
+        ) : (
+          <>
+            <FlatList
+              contentContainerStyle={[
+                styles.listContent,
+                {
+                  paddingBottom: spacing.xl,
+                  paddingTop: spacing.lg,
+                },
+              ]}
+              data={displayMessages}
+              inverted
+              keyExtractor={(item) => item.id}
+              keyboardShouldPersistTaps="handled"
+              renderItem={({ item, index }) => {
+                const nextMessage = displayMessages[index + 1];
+                const density = getMessageDensity(item.createdAt);
+                const showDayLabel =
+                  !nextMessage ||
+                  !isSameCalendarDay(item.createdAt, nextMessage.createdAt);
+                const isExpanded = Boolean(expandedMessageIds[item.id]);
+                const canExpand = density.numberOfLines !== undefined;
+
+                return (
+                  <MessageRow
+                    dayLabel={showDayLabel ? formatDayLabel(item.createdAt) : null}
+                    density={density}
+                    isExpanded={isExpanded}
+                    message={item}
+                    onCopyCaption={() => runAction(() => handleCopy(item))}
+                    onLongPress={() => {
+                      if (item.messageType === 'social_post') {
+                        showSocialPostActionSheet(item);
+                        return;
+                      }
+
+                      if (item.role === 'assistant') {
+                        showCoachActionSheet(item);
+                        return;
+                      }
+
+                      runAction(() => handleCopy(item));
+                    }}
+                    onPress={() => {
+                      if (canExpand) {
+                        toggleExpanded(item.id);
+                      }
+                    }}
+                    onSaveImage={() => runAction(() => handleSaveSocialImage(item))}
+                    onShareImage={() => runAction(() => handleShareSocialImage(item))}
+                    showTypingIndicator={
+                      waitingForFirstToken &&
+                      isStreaming &&
+                      item.role === 'assistant' &&
+                      item.content.length === 0
+                    }
+                  />
+                );
+              }}
+              style={styles.list}
+              ListEmptyComponent={
+                <View style={styles.emptyState}>
+                  <Text style={styles.emptyTitle}>No coach messages yet</Text>
+                  <Text style={styles.emptyBody}>
+                    Start the conversation below and PeiPei will respond in real
+                    time.
+                  </Text>
+                </View>
+              }
+              refreshControl={
+                <RefreshControl
+                  onRefresh={() => chatQuery.refetch()}
+                  refreshing={chatQuery.isRefetching && !chatQuery.isLoading}
+                  tintColor={colors.text}
+                />
+              }
+            />
+
+            <View
+              style={[
+                styles.composerContainer,
+                {
+                  paddingBottom: Math.max(insets.bottom, spacing.md),
+                },
+              ]}
+            >
+              {composerError ? (
+                <View style={styles.inlineErrorBanner}>
+                  <Text style={styles.inlineErrorTitle}>{composerError.title}</Text>
+                  <Text style={styles.inlineErrorBody}>
+                    {composerError.description}
+                  </Text>
+                </View>
+              ) : null}
+
+              <View style={styles.composer}>
+                <Pressable
+                  accessibilityHint="Opens the camera or photo library."
+                  accessibilityLabel="Add photo attachment"
+                  accessibilityRole="button"
+                  onPress={() => void handleAttachment()}
+                  style={({ pressed }) => [
+                    styles.attachmentButton,
+                    pressed && styles.buttonPressed,
+                  ]}
+                >
+                  <Text style={styles.attachmentButtonText}>+</Text>
+                </Pressable>
+
+                <TextInput
+                  accessibilityHint="Composes a message to your running coach."
+                  accessibilityLabel="Message composer"
+                  multiline
+                  onChangeText={handleComposerChange}
+                  placeholder="Tell PeiPei how the legs feel..."
+                  placeholderTextColor={colors.muted}
+                  style={styles.composerInput}
+                  value={composerValue}
+                />
+
+                <Pressable
+                  accessibilityHint="Sends your message to PeiPei."
+                  accessibilityLabel="Send message"
+                  accessibilityRole="button"
+                  disabled={!composerValue.trim() || isStreaming}
+                  onPress={() => void handleSend()}
+                  style={({ pressed }) => [
+                    styles.sendButton,
+                    pressed && styles.buttonPressed,
+                    (!composerValue.trim() || isStreaming) && styles.buttonDisabled,
+                  ]}
+                >
+                  {isStreaming ? (
+                    <ActivityIndicator color={colors.text} size="small" />
+                  ) : (
+                    <Text style={styles.sendButtonText}>Send</Text>
+                  )}
+                </Pressable>
+              </View>
+            </View>
+          </>
+        )}
+      </KeyboardAvoidingView>
+
+      {isTabletLayout ? (
+        <View style={styles.tabletSidebar}>
+          <CoachDataSidebar
+            bottomInset={insets.bottom}
+            isOpen
+            onClose={() => undefined}
+            onOpen={() => undefined}
+            sessionCookie={sessionCookie}
+            topInset={insets.top}
+            variant="docked"
+          />
+        </View>
+      ) : (
+        <CoachDataSidebar
+          bottomInset={insets.bottom}
+          isOpen={isSidebarOpen}
+          onClose={() => setIsSidebarOpen(false)}
+          onOpen={() => setIsSidebarOpen(true)}
+          sessionCookie={sessionCookie}
+          topInset={insets.top}
+          variant="overlay"
+        />
+      )}
+    </View>
   );
 }
 
@@ -629,6 +752,13 @@ function MessageRow({
   const isUser = message.role === 'user';
   const bubbleTextStyle = isUser ? styles.userMessageText : styles.coachMessageText;
   const bubbleStyle = isUser ? styles.userBubble : styles.coachBubble;
+  const canExpand = density.numberOfLines !== undefined;
+  const accessibilityHint =
+    message.messageType === 'social_post'
+      ? 'Long press for sharing actions. Use the buttons inside the card to copy, save, or share.'
+      : canExpand
+        ? 'Double tap to expand or collapse. Long press to copy or share.'
+        : 'Long press to copy or share this message.';
 
   return (
     <View style={[styles.messageRow, { marginBottom: density.spacing }]}>
@@ -641,6 +771,9 @@ function MessageRow({
         ]}
       >
         <Pressable
+          accessibilityHint={accessibilityHint}
+          accessibilityLabel={buildMessageAccessibilityLabel(message)}
+          accessibilityRole="button"
           delayLongPress={180}
           onLongPress={onLongPress}
           onPress={onPress}
@@ -694,12 +827,20 @@ function SocialPostCard({
 }) {
   return (
     <View style={styles.socialCard}>
-      <Pressable delayLongPress={180} onLongPress={onLongPress}>
+      <Pressable
+        accessibilityHint="Long press for social post actions."
+        accessibilityLabel="Coach social card image"
+        accessibilityRole="button"
+        delayLongPress={180}
+        onLongPress={onLongPress}
+      >
         <Image source={{ uri: imageUrl }} style={styles.socialImage} />
       </Pressable>
       <Text style={styles.socialCaption}>{caption}</Text>
       <View style={styles.socialActions}>
         <Pressable
+          accessibilityLabel="Copy social post caption"
+          accessibilityRole="button"
           onPress={onCopyCaption}
           style={({ pressed }) => [
             styles.socialActionButton,
@@ -709,6 +850,8 @@ function SocialPostCard({
           <Text style={styles.socialActionText}>Copy Caption</Text>
         </Pressable>
         <Pressable
+          accessibilityLabel="Save social post image"
+          accessibilityRole="button"
           onPress={onSaveImage}
           style={({ pressed }) => [
             styles.socialActionButton,
@@ -718,6 +861,8 @@ function SocialPostCard({
           <Text style={styles.socialActionText}>Save Image</Text>
         </Pressable>
         <Pressable
+          accessibilityLabel="Share social post image"
+          accessibilityRole="button"
           onPress={onShareImage}
           style={({ pressed }) => [
             styles.socialActionButton,
@@ -764,6 +909,74 @@ function TypingDot({ delay }: { delay: number }) {
   }));
 
   return <Animated.View style={[styles.typingDot, animatedStyle]} />;
+}
+
+function CoachLoadingState() {
+  return (
+    <View style={styles.loadingShell}>
+      <View style={styles.loadingDayRow}>
+        <View style={[styles.skeletonBlock, styles.loadingDayLabel]} />
+      </View>
+      <View style={styles.loadingMessageColumn}>
+        <View style={[styles.skeletonBubble, styles.skeletonCoachBubbleLarge]} />
+        <View style={[styles.skeletonBubble, styles.skeletonUserBubble]} />
+        <View style={[styles.skeletonBubble, styles.skeletonCoachBubbleMedium]} />
+        <View style={[styles.skeletonBubble, styles.skeletonCoachBubbleSmall]} />
+      </View>
+      <View style={styles.loadingComposer}>
+        <View style={[styles.skeletonBlock, styles.loadingComposerButton]} />
+        <View style={[styles.skeletonBlock, styles.loadingComposerInput]} />
+        <View style={[styles.skeletonBlock, styles.loadingComposerSend]} />
+      </View>
+    </View>
+  );
+}
+
+function CoachErrorStateCard({
+  errorPresentation,
+  onPrimaryAction,
+  onSecondaryAction,
+}: {
+  errorPresentation: CoachErrorPresentation;
+  onPrimaryAction: () => Promise<void>;
+  onSecondaryAction?: () => Promise<void>;
+}) {
+  return (
+    <View style={styles.centered}>
+      <Text style={styles.errorTitle}>{errorPresentation.title}</Text>
+      <Text style={styles.errorBody}>{errorPresentation.description}</Text>
+      <Pressable
+        accessibilityLabel={errorPresentation.primaryActionLabel}
+        accessibilityRole="button"
+        onPress={() => {
+          void onPrimaryAction();
+        }}
+        style={({ pressed }) => [
+          styles.retryButton,
+          pressed && styles.buttonPressed,
+        ]}
+      >
+        <Text style={styles.retryButtonText}>
+          {errorPresentation.primaryActionLabel}
+        </Text>
+      </Pressable>
+      {onSecondaryAction ? (
+        <Pressable
+          accessibilityLabel="Sign out"
+          accessibilityRole="button"
+          onPress={() => {
+            void onSecondaryAction();
+          }}
+          style={({ pressed }) => [
+            styles.ghostButton,
+            pressed && styles.buttonPressed,
+          ]}
+        >
+          <Text style={styles.ghostButtonText}>Sign out</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
 }
 
 function getMessageDensity(createdAt: string): DensityConfig {
@@ -846,6 +1059,20 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  tabletShell: {
+    flexDirection: 'row',
+  },
+  conversationPane: {
+    flex: 1,
+  },
+  tabletConversation: {
+    borderRightColor: colors.border,
+    borderRightWidth: StyleSheet.hairlineWidth,
+  },
+  tabletSidebar: {
+    backgroundColor: colors.surface,
+    width: 280,
+  },
   centered: {
     flex: 1,
     alignItems: 'center',
@@ -853,9 +1080,67 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: spacing.xl,
   },
-  loadingText: {
-    color: colors.muted,
-    marginTop: spacing.md,
+  loadingShell: {
+    flex: 1,
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.xl,
+    paddingTop: spacing.lg,
+  },
+  loadingDayRow: {
+    alignItems: 'center',
+  },
+  loadingDayLabel: {
+    borderRadius: radii.pill,
+    height: 12,
+    width: 72,
+  },
+  loadingMessageColumn: {
+    flex: 1,
+    gap: spacing.lg,
+    justifyContent: 'center',
+  },
+  loadingComposer: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  loadingComposerButton: {
+    borderRadius: radii.pill,
+    height: 42,
+    width: 42,
+  },
+  loadingComposerInput: {
+    borderRadius: radii.card,
+    flex: 1,
+    height: 52,
+  },
+  loadingComposerSend: {
+    borderRadius: radii.pill,
+    height: 42,
+    width: 78,
+  },
+  skeletonBubble: {
+    backgroundColor: colors.surface,
+    borderRadius: radii.bubble,
+    height: 72,
+  },
+  skeletonCoachBubbleLarge: {
+    width: '78%',
+  },
+  skeletonCoachBubbleMedium: {
+    width: '72%',
+  },
+  skeletonCoachBubbleSmall: {
+    width: '58%',
+  },
+  skeletonUserBubble: {
+    alignSelf: 'flex-end',
+    backgroundColor: '#4F2A2A',
+    width: '52%',
+  },
+  skeletonBlock: {
+    backgroundColor: colors.surface,
   },
   errorTitle: {
     color: colors.text,
@@ -1064,6 +1349,27 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
+  },
+  inlineErrorBanner: {
+    backgroundColor: '#2A1717',
+    borderColor: '#6D3030',
+    borderRadius: radii.input,
+    borderWidth: StyleSheet.hairlineWidth,
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  inlineErrorTitle: {
+    color: '#F1C4C4',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
+  inlineErrorBody: {
+    color: '#D8A5A5',
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: spacing.xs,
   },
   composer: {
     alignItems: 'flex-end',

@@ -13,6 +13,7 @@ export default function AppLayout() {
       }}
     >
       <Stack.Screen name="index" />
+      <Stack.Screen name="onboarding" />
       <Stack.Screen
         name="settings"
         options={{

@@ -56,6 +56,8 @@ export default function RegisterScreen() {
         <View style={styles.card}>
           <Text style={styles.label}>Name</Text>
           <TextInput
+            accessibilityHint="Enter your full name."
+            accessibilityLabel="Name"
             autoCapitalize="words"
             autoComplete="name"
             onChangeText={setName}
@@ -68,6 +70,8 @@ export default function RegisterScreen() {
 
           <Text style={[styles.label, styles.labelSpacing]}>Email</Text>
           <TextInput
+            accessibilityHint="Enter the email address for your new PeiPei account."
+            accessibilityLabel="Email"
             autoCapitalize="none"
             autoComplete="email"
             autoCorrect={false}
@@ -82,6 +86,8 @@ export default function RegisterScreen() {
 
           <Text style={[styles.label, styles.labelSpacing]}>Password</Text>
           <TextInput
+            accessibilityHint="Create a password for your PeiPei account."
+            accessibilityLabel="Password"
             autoCapitalize="none"
             autoComplete="password-new"
             autoCorrect={false}
@@ -97,6 +103,8 @@ export default function RegisterScreen() {
           {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
 
           <Pressable
+            accessibilityLabel="Create account"
+            accessibilityRole="button"
             disabled={registerMutation.isPending}
             onPress={() => registerMutation.mutate()}
             style={({ pressed }) => [
@@ -112,7 +120,11 @@ export default function RegisterScreen() {
             )}
           </Pressable>
 
-          <Link href="/login" style={styles.secondaryLink}>
+          <Link
+            accessibilityLabel="Go to sign in"
+            href="/login"
+            style={styles.secondaryLink}
+          >
             Already have an account? Sign in
           </Link>
         </View>

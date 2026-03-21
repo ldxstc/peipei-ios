@@ -3,7 +3,7 @@
     "name": "PeiPei",
     "slug": "peipei",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "scheme": "peipei",
     "userInterfaceStyle": "dark",
@@ -14,11 +14,11 @@
     },
     "ios": {
       "bundleIdentifier": "com.peipei.app",
-      "supportsTablet": false
+      "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0F0E0C",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -57,7 +57,6 @@
       ],
       "expo-secure-store",
       "expo-font",
-      "expo-widgets",
       "expo-sharing"
     ]
   }

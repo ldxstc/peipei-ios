@@ -48,16 +48,33 @@ export default function RootLayout() {
 function RootNavigator({ fontsLoaded }: { fontsLoaded: boolean }) {
   const router = useRouter();
   const segments = useSegments();
-  const { status } = useAuth();
+  const { onboardingStatus, status } = useAuth();
 
   useEffect(() => {
-    if (!fontsLoaded || status === 'loading') {
+    if (
+      !fontsLoaded ||
+      status === 'loading' ||
+      onboardingStatus === 'loading'
+    ) {
       return;
     }
 
     const activeGroup = segments[0];
+    const activeScreen = segments.at(1);
+    const isOnboardingRoute =
+      activeGroup === '(app)' && activeScreen === 'onboarding';
 
-    if (status === 'authenticated' && activeGroup !== '(app)') {
+    if (status === 'authenticated' && onboardingStatus === 'pending') {
+      if (!isOnboardingRoute) {
+        router.replace('/onboarding');
+      }
+      return;
+    }
+
+    if (
+      status === 'authenticated' &&
+      (activeGroup !== '(app)' || isOnboardingRoute)
+    ) {
       router.replace('/');
       return;
     }
@@ -65,17 +82,25 @@ function RootNavigator({ fontsLoaded }: { fontsLoaded: boolean }) {
     if (status === 'unauthenticated' && activeGroup !== '(auth)') {
       router.replace('/login');
     }
-  }, [fontsLoaded, router, segments, status]);
+  }, [fontsLoaded, onboardingStatus, router, segments, status]);
 
   useEffect(() => {
-    if (fontsLoaded && status !== 'loading') {
+    if (
+      fontsLoaded &&
+      status !== 'loading' &&
+      onboardingStatus !== 'loading'
+    ) {
       SplashScreen.hideAsync().catch(() => {
         // Ignore splash errors on repeated hides.
       });
     }
-  }, [fontsLoaded, status]);
+  }, [fontsLoaded, onboardingStatus, status]);
 
-  if (!fontsLoaded || status === 'loading') {
+  if (
+    !fontsLoaded ||
+    status === 'loading' ||
+    onboardingStatus === 'loading'
+  ) {
     return null;
   }
 

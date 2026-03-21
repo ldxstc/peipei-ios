@@ -18,10 +18,17 @@ import {
   getStoredSessionCookie,
   setStoredSessionCookie,
 } from '../lib/auth-storage';
+import {
+  getOnboardingPending,
+  setOnboardingPending,
+} from '../lib/onboarding-storage';
 
 type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
+type OnboardingStatus = 'loading' | 'pending' | 'complete';
 
 type AuthContextValue = {
+  completeOnboarding: () => Promise<void>;
+  onboardingStatus: OnboardingStatus;
   refreshSession: () => Promise<void>;
   sessionCookie: string | null;
   status: AuthStatus;
@@ -35,6 +42,8 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: PropsWithChildren) {
   const queryClient = useQueryClient();
+  const [onboardingStatus, setOnboardingStatus] =
+    useState<OnboardingStatus>('loading');
   const [sessionCookie, setSessionCookie] = useState<string | null>(null);
   const [status, setStatus] = useState<AuthStatus>('loading');
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -44,7 +53,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     async function restoreSession() {
       try {
-        const storedCookie = await getStoredSessionCookie();
+        const [storedCookie, onboardingPending] = await Promise.all([
+          getStoredSessionCookie(),
+          getOnboardingPending(),
+        ]);
+
+        if (isMounted) {
+          setOnboardingStatus(onboardingPending ? 'pending' : 'complete');
+        }
 
         if (!storedCookie) {
           if (isMounted) {
@@ -68,6 +84,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         await deleteStoredSessionCookie();
 
         if (isMounted) {
+          setOnboardingStatus('complete');
           setSessionCookie(null);
           setUser(null);
           setStatus('unauthenticated');
@@ -82,17 +99,25 @@ export function AuthProvider({ children }: PropsWithChildren) {
     };
   }, []);
 
-  async function finalizeAuth(cookie: string) {
+  async function finalizeAuth(
+    cookie: string,
+    nextOnboardingStatus?: Exclude<OnboardingStatus, 'loading'>,
+  ) {
     const session = await getSession(cookie);
 
     if (!session.user) {
       throw new Error('The account session could not be loaded.');
     }
 
+    const resolvedOnboardingStatus =
+      nextOnboardingStatus ?? ((await getOnboardingPending()) ? 'pending' : 'complete');
+
     await setStoredSessionCookie(cookie);
+    await setOnboardingPending(resolvedOnboardingStatus === 'pending');
     queryClient.clear();
     setSessionCookie(cookie);
     setUser(session.user);
+    setOnboardingStatus(resolvedOnboardingStatus);
     setStatus('authenticated');
   }
 
@@ -103,7 +128,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   async function signUp(name: string, email: string, password: string) {
     const cookie = await signUpWithEmail(name, email, password);
-    await finalizeAuth(cookie);
+    await finalizeAuth(cookie, 'pending');
   }
 
   async function signOut() {
@@ -130,9 +155,16 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setStatus('authenticated');
   }
 
+  async function completeOnboarding() {
+    await setOnboardingPending(false);
+    setOnboardingStatus('complete');
+  }
+
   return (
     <AuthContext.Provider
       value={{
+        completeOnboarding,
+        onboardingStatus,
         refreshSession,
         sessionCookie,
         status,
