@@ -36,8 +36,10 @@ import {
   consumeTextStream,
   createLocalId,
   getCoachChat,
+  getCoachSidebar,
   openCoachChatStream,
 } from '../../src/lib/api';
+import { syncPeiPeiWidgets } from '../../src/lib/peipei-widgets';
 import { useAuth } from '../../src/providers/auth-provider';
 
 type DensityConfig = {
@@ -67,6 +69,12 @@ export default function CoachScreen() {
     queryFn: () => getCoachChat(sessionCookie ?? ''),
     enabled: Boolean(sessionCookie),
   });
+  const coachSidebarQuery = useQuery({
+    queryKey: ['coach-sidebar'],
+    queryFn: () => getCoachSidebar(sessionCookie ?? ''),
+    enabled: Boolean(sessionCookie),
+    staleTime: 60_000,
+  });
 
   const baseMessages = chatQuery.data?.messages ?? [];
   const conversation = transientMessages ?? baseMessages;
@@ -74,6 +82,31 @@ export default function CoachScreen() {
     (left, right) =>
       new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
   );
+
+  useEffect(() => {
+    if (!coachSidebarQuery.data) {
+      return;
+    }
+
+    const latestCoachMessage =
+      displayMessages.find(
+        (message) =>
+          message.role === 'assistant' && message.content.trim().length > 0,
+      )?.content ?? 'PeiPei is ready when you are.';
+    const daysToRaceLabel = coachSidebarQuery.data.goalProgress.countdown;
+    const daysToRaceNumber = Number(
+      daysToRaceLabel.match(/\d+/)?.[0] ?? Number.POSITIVE_INFINITY,
+    );
+
+    void syncPeiPeiWidgets({
+      daysToRace: daysToRaceLabel,
+      isRaceWeek: Number.isFinite(daysToRaceNumber) && daysToRaceNumber < 7,
+      lastCoachMessage: latestCoachMessage.slice(0, 60),
+      plannedWorkout: coachSidebarQuery.data.todayPlan.title,
+      trainingStatus: coachSidebarQuery.data.todayPlan.title,
+      workoutDistance: coachSidebarQuery.data.todayPlan.distance,
+    });
+  }, [coachSidebarQuery.data, displayMessages]);
 
   async function handleCopy(message: CoachMessage) {
     await Clipboard.setStringAsync(message.content);

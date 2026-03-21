@@ -74,6 +74,10 @@ export type CoachSidebarData = {
     km: string;
     runs: string;
   };
+  todayPlan: {
+    distance: string;
+    title: string;
+  };
 };
 
 export type PushRegistrationResult = {
@@ -697,6 +701,27 @@ export async function getCoachSidebar(sessionCookie: string) {
             'stats.runs',
           ]),
         ) || '0',
+    },
+    todayPlan: {
+      distance:
+        stringifyValue(
+          firstPresentValue(payload, [
+            'todayPlan.distance',
+            'todayWorkout.distance',
+            'workoutToday.distance',
+            'plan.today.distance',
+          ]),
+        ) || '--',
+      title:
+        stringifyValue(
+          firstPresentValue(payload, [
+            'todayPlan.title',
+            'todayPlan.type',
+            'todayWorkout.title',
+            'todayWorkout.type',
+            'workoutToday.title',
+          ]),
+        ) || 'Check today\'s plan',
     },
   } satisfies CoachSidebarData;
 }

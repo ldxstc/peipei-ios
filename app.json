@@ -31,6 +31,24 @@
     "plugins": [
       "expo-router",
       [
+        "expo-widgets",
+        {
+          "enablePushNotifications": true,
+          "groupIdentifier": "group.com.peipei.app",
+          "widgets": [
+            {
+              "name": "PeiPeiQuickView",
+              "displayName": "PeiPei Quick View",
+              "description": "Today's workout, race countdown, and the latest coach note.",
+              "supportedFamilies": [
+                "accessoryInline",
+                "accessoryRectangular"
+              ]
+            }
+          ]
+        }
+      ],
+      [
         "expo-notifications",
         {
           "icon": "./assets/icon.png",
@@ -38,7 +56,8 @@
         }
       ],
       "expo-secure-store",
-      "expo-font"
+      "expo-font",
+      "expo-widgets"
     ]
   }
 }
