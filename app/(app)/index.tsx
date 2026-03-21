@@ -28,6 +28,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { CoachDataSidebar } from '../../src/components/sidebar/coach-data-sidebar';
 import { colors, fonts, radii, spacing } from '../../src/design/tokens';
 import {
   type CoachMessage,
@@ -54,6 +55,7 @@ export default function CoachScreen() {
   const [expandedMessageIds, setExpandedMessageIds] = useState<
     Record<string, true>
   >({});
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [transientMessages, setTransientMessages] = useState<CoachMessage[] | null>(
     null,
@@ -283,8 +285,21 @@ export default function CoachScreen() {
         </View>
         <View style={styles.headerActions}>
           <Pressable
+            accessibilityLabel="Open training data"
+            onPress={() => setIsSidebarOpen((current) => !current)}
+            style={({ pressed }) => [
+              styles.iconButton,
+              pressed && styles.buttonPressed,
+            ]}
+          >
+            <Ionicons color={colors.text} name="stats-chart-outline" size={18} />
+          </Pressable>
+          <Pressable
             accessibilityLabel="Open settings"
-            onPress={() => router.push('/settings')}
+            onPress={() => {
+              setIsSidebarOpen(false);
+              router.push('/settings');
+            }}
             style={({ pressed }) => [
               styles.iconButton,
               pressed && styles.buttonPressed,
@@ -401,6 +416,15 @@ export default function CoachScreen() {
           </Pressable>
         </View>
       </View>
+
+      <CoachDataSidebar
+        bottomInset={insets.bottom}
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        onOpen={() => setIsSidebarOpen(true)}
+        sessionCookie={sessionCookie}
+        topInset={insets.top}
+      />
     </KeyboardAvoidingView>
   );
 }

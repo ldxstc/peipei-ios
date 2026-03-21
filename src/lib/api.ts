@@ -56,6 +56,26 @@ export type SettingsPanelData = SettingsSaveInput & {
   raw: unknown;
 };
 
+export type CoachSidebarData = {
+  goalProgress: {
+    countdown: string;
+    detail: string;
+    title: string;
+  };
+  recentRuns: Array<{
+    detail: string;
+    id: string;
+    subtitle: string;
+    title: string;
+  }>;
+  raw: unknown;
+  thisWeek: {
+    avgPace: string;
+    km: string;
+    runs: string;
+  };
+};
+
 export type ChatRequestMessage = Pick<
   CoachMessage,
   'id' | 'role' | 'content' | 'createdAt'
@@ -280,6 +300,41 @@ function normalizeTierLabel(value: unknown) {
   }
 
   return normalized;
+}
+
+function normalizeRecentRun(value: unknown) {
+  const run = asRecord(value);
+  const distance = stringifyValue(
+    firstPresentValue(run, ['distance', 'distanceLabel', 'km', 'miles']),
+  );
+  const pace = stringifyValue(
+    firstPresentValue(run, ['pace', 'paceLabel', 'avgPace', 'averagePace']),
+  );
+  const subtitle = stringifyValue(
+    firstPresentValue(run, ['subtitle', 'summary']),
+  );
+  const detail = stringifyValue(
+    firstPresentValue(run, ['detail', 'time', 'type', 'duration']),
+  );
+
+  return {
+    detail:
+      detail ||
+      [distance, pace]
+        .filter(Boolean)
+        .join(' · '),
+    id:
+      stringifyValue(firstPresentValue(run, ['id', 'runId'])) ||
+      createLocalId('run'),
+    subtitle:
+      subtitle ||
+      [distance, pace]
+        .filter(Boolean)
+        .join(' · '),
+    title:
+      stringifyValue(firstPresentValue(run, ['title', 'date', 'name', 'day'])) ||
+      'Recent run',
+  };
 }
 
 function buildMessageFromPayload(payload: JsonValue | null, fallbackText: string) {
@@ -560,6 +615,86 @@ export async function disconnectGarmin(sessionCookie: string) {
     { method: 'POST' },
     sessionCookie,
   );
+}
+
+export async function getCoachSidebar(sessionCookie: string) {
+  const payload = await requestJson<unknown>(
+    '/api/coach/sidebar',
+    { method: 'GET' },
+    sessionCookie,
+  );
+
+  const recentRunsSource =
+    firstPresentValue(payload, [
+      'recentRuns',
+      'runs.recent',
+      'runs',
+      'recent',
+    ]) ?? [];
+  const recentRuns = Array.isArray(recentRunsSource)
+    ? recentRunsSource.slice(0, 5).map(normalizeRecentRun)
+    : [];
+
+  return {
+    goalProgress: {
+      countdown:
+        stringifyValue(
+          firstPresentValue(payload, [
+            'goalProgress.countdown',
+            'goal.countdown',
+            'race.countdown',
+            'race.daysToRace',
+          ]),
+        ) || 'No race set',
+      detail:
+        stringifyValue(
+          firstPresentValue(payload, [
+            'goalProgress.detail',
+            'goal.detail',
+            'race.detail',
+            'race.date',
+          ]),
+        ) || 'Set a race goal in the web app',
+      title:
+        stringifyValue(
+          firstPresentValue(payload, [
+            'goalProgress.title',
+            'goal.title',
+            'race.name',
+            'race.title',
+          ]),
+        ) || 'Goal Progress',
+    },
+    raw: payload,
+    recentRuns,
+    thisWeek: {
+      avgPace:
+        stringifyValue(
+          firstPresentValue(payload, [
+            'thisWeek.avgPace',
+            'week.avgPace',
+            'stats.avgPace',
+          ]),
+        ) || '--',
+      km:
+        stringifyValue(
+          firstPresentValue(payload, [
+            'thisWeek.km',
+            'week.km',
+            'stats.km',
+            'thisWeek.distance',
+          ]),
+        ) || '0',
+      runs:
+        stringifyValue(
+          firstPresentValue(payload, [
+            'thisWeek.runs',
+            'week.runs',
+            'stats.runs',
+          ]),
+        ) || '0',
+    },
+  } satisfies CoachSidebarData;
 }
 
 export function extractTextChunk(payload: unknown): string {
