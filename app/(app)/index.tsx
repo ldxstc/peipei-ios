@@ -1,11 +1,18 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
-import { Audio } from 'expo-av';
 import * as Clipboard from 'expo-clipboard';
+import {
+  RecordingPresets,
+  requestRecordingPermissionsAsync,
+  setAudioModeAsync,
+  useAudioRecorder,
+  useAudioRecorderState,
+} from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { Stack, useRouter } from 'expo-router';
 import {
+  memo,
   useEffect,
   useMemo,
   useRef,
@@ -85,9 +92,17 @@ type ComposerAttachment = {
   uri: string;
 };
 
-type RecordingStatusShape = {
-  isRecording?: boolean;
-  metering?: number;
+type MessageRowProps = {
+  densityTier: DensityTier;
+  isExpanded: boolean;
+  isFirstInSequence: boolean;
+  isPending: boolean;
+  message: CoachMessage;
+  onCopyCaption: () => void;
+  onExpand: (messageId: string) => void;
+  onReply: (message: CoachMessage) => void;
+  onSaveImage: () => void;
+  onShareImage: () => void;
 };
 
 const HEADER_ICON_SIZE = 18;
@@ -371,10 +386,14 @@ export default function CoachScreen() {
   const inputRef = useRef<TextInput>(null);
   const listRef = useRef<FlatList<ChatItem>>(null);
   const loadMoreInFlightRef = useRef(false);
-  const recordingRef = useRef<Audio.Recording | null>(null);
   const shouldStopRecordingRef = useRef(false);
   const { width } = useWindowDimensions();
   const { sessionCookie, signOut, user } = useAuth();
+  const recorder = useAudioRecorder({
+    ...RecordingPresets.HIGH_QUALITY,
+    isMeteringEnabled: true,
+  });
+  const recorderState = useAudioRecorderState(recorder, 120);
 
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [composerError, setComposerError] = useState<CoachErrorPresentation | null>(
@@ -386,7 +405,6 @@ export default function CoachScreen() {
   const [headerHeight, setHeaderHeight] = useState(0);
   const [inputHeight, setInputHeight] = useState(INPUT_MIN_HEIGHT);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
   const [isRecordingStarting, setIsRecordingStarting] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -413,6 +431,7 @@ export default function CoachScreen() {
   });
 
   const isTabletLayout = width >= TABLET_BREAKPOINT;
+  const isRecording = recorderState.isRecording;
   const persistedMessages = chatQuery.data?.messages ?? [];
   const mergedMessagesDesc = [...persistedMessages, ...draftMessages].sort(
     (left, right) =>
@@ -466,16 +485,28 @@ export default function CoachScreen() {
   }, [isSidebarOpen, isTabletLayout]);
 
   useEffect(() => {
-    return () => {
-      const activeRecording = recordingRef.current;
+    if (isRecording && typeof recorderState.metering === 'number') {
+      setMeterSamples((current) => [
+        ...current.slice(-17),
+        normalizeMetering(recorderState.metering),
+      ]);
+      return;
+    }
 
-      if (activeRecording) {
-        activeRecording.stopAndUnloadAsync().catch(() => {
-          // Ignore recording cleanup errors on screen unmount.
+    if (!isRecording && !isRecordingStarting && meterSamples.length) {
+      setMeterSamples([]);
+    }
+  }, [isRecording, isRecordingStarting, meterSamples.length, recorderState.metering]);
+
+  useEffect(() => {
+    return () => {
+      if (recorderState.isRecording) {
+        recorder.stop().catch(() => {
+          // Ignore recorder cleanup errors on screen unmount.
         });
       }
     };
-  }, []);
+  }, [recorder, recorderState.isRecording]);
 
   async function handleSaveSocialImage(message: CoachMessage) {
     if (!message.socialPost?.imageUrl) {
@@ -778,35 +809,20 @@ export default function CoachScreen() {
     setIsRecordingStarting(true);
 
     try {
-      const permission = await Audio.requestPermissionsAsync();
+      const permission = await requestRecordingPermissionsAsync();
 
       if (!permission.granted) {
         throw new Error('Microphone access is required to record a voice message.');
       }
 
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
+      await setAudioModeAsync({
+        allowsRecording: true,
+        interruptionMode: 'mixWithOthers',
+        playsInSilentMode: true,
       });
 
-      const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY,
-        (status: RecordingStatusShape) => {
-          if (
-            status.isRecording &&
-            typeof status.metering === 'number'
-          ) {
-            setMeterSamples((current) => [
-              ...current.slice(-17),
-              normalizeMetering(status.metering),
-            ]);
-          }
-        },
-        120,
-      );
-
-      recordingRef.current = recording;
-      setIsRecording(true);
+      await recorder.prepareToRecordAsync();
+      recorder.record();
     } catch (error) {
       const message =
         error instanceof Error
@@ -825,22 +841,19 @@ export default function CoachScreen() {
 
   async function stopRecording() {
     shouldStopRecordingRef.current = true;
-    const activeRecording = recordingRef.current;
 
-    if (!activeRecording) {
+    if (!isRecording && !isRecordingStarting) {
       return;
     }
 
-    recordingRef.current = null;
-
     try {
-      await activeRecording.stopAndUnloadAsync();
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        playsInSilentModeIOS: true,
+      await recorder.stop();
+      await setAudioModeAsync({
+        allowsRecording: false,
+        interruptionMode: 'mixWithOthers',
+        playsInSilentMode: true,
       });
-
-      const uri = activeRecording.getURI();
+      const uri = recorder.getStatus().url;
 
       if (!uri) {
         throw new Error('The recording file could not be created.');
@@ -855,7 +868,6 @@ export default function CoachScreen() {
         uri,
       };
 
-      setIsRecording(false);
       setMeterSamples([]);
       await submitMessage({
         attachments: [audioAttachment],
@@ -863,7 +875,6 @@ export default function CoachScreen() {
         optimisticContent: 'Voice message',
       });
     } catch (error) {
-      setIsRecording(false);
       setMeterSamples([]);
 
       if (
@@ -1193,23 +1204,23 @@ export default function CoachScreen() {
   );
 }
 
-function DayLabelRow({ label }: { label: string }) {
+const DayLabelRow = memo(function DayLabelRow({ label }: { label: string }) {
   return (
     <View style={styles.dayLabelRow}>
       <Text style={styles.dayLabelText}>{label}</Text>
     </View>
   );
-}
+});
 
-function CoachIndicator() {
+const CoachIndicator = memo(function CoachIndicator() {
   return (
     <View style={styles.coachIndicator}>
       <Text style={styles.coachIndicatorText}>P</Text>
     </View>
   );
-}
+});
 
-function MessageRow({
+const MessageRow = memo(function MessageRow({
   densityTier,
   isExpanded,
   isFirstInSequence,
@@ -1220,18 +1231,7 @@ function MessageRow({
   onReply,
   onSaveImage,
   onShareImage,
-}: {
-  densityTier: DensityTier;
-  isExpanded: boolean;
-  isFirstInSequence: boolean;
-  isPending: boolean;
-  message: CoachMessage;
-  onCopyCaption: () => void;
-  onExpand: (messageId: string) => void;
-  onReply: (message: CoachMessage) => void;
-  onSaveImage: () => void;
-  onShareImage: () => void;
-}) {
+}: MessageRowProps) {
   const translateX = useRef(new Animated.Value(0)).current;
   const timestampOpacity = useRef(new Animated.Value(0)).current;
   const timestampTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1395,9 +1395,9 @@ function MessageRow({
       </View>
     </Animated.View>
   );
-}
+}, areMessageRowPropsEqual);
 
-function SocialPostCard({
+const SocialPostCard = memo(function SocialPostCard({
   caption,
   imageUrl,
   onCopyCaption,
@@ -1421,7 +1421,7 @@ function SocialPostCard({
       </View>
     </View>
   );
-}
+});
 
 function ActionPill({
   label,
@@ -1445,7 +1445,11 @@ function ActionPill({
   );
 }
 
-function TypingIndicatorRow({ startedAt }: { startedAt: number }) {
+const TypingIndicatorRow = memo(function TypingIndicatorRow({
+  startedAt,
+}: {
+  startedAt: number;
+}) {
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
@@ -1477,7 +1481,7 @@ function TypingIndicatorRow({ startedAt }: { startedAt: number }) {
       </View>
     </View>
   );
-}
+});
 
 function TypingDot({
   delay,
@@ -1537,7 +1541,7 @@ function TypingDot({
   );
 }
 
-function LoadingShimmerRow() {
+const LoadingShimmerRow = memo(function LoadingShimmerRow() {
   const opacity = useRef(new Animated.Value(0.3)).current;
 
   useEffect(() => {
@@ -1578,7 +1582,7 @@ function LoadingShimmerRow() {
       </View>
     </Animated.View>
   );
-}
+});
 
 function ReplyBar({
   onClear,
@@ -1726,6 +1730,25 @@ function CoachErrorStateCard({
         </Pressable>
       ) : null}
     </View>
+  );
+}
+
+function areMessageRowPropsEqual(
+  previous: Readonly<MessageRowProps>,
+  next: Readonly<MessageRowProps>,
+) {
+  return (
+    previous.densityTier === next.densityTier &&
+    previous.isExpanded === next.isExpanded &&
+    previous.isFirstInSequence === next.isFirstInSequence &&
+    previous.isPending === next.isPending &&
+    previous.message.id === next.message.id &&
+    previous.message.role === next.message.role &&
+    previous.message.content === next.message.content &&
+    previous.message.createdAt === next.message.createdAt &&
+    previous.message.messageType === next.message.messageType &&
+    previous.message.socialPost?.caption === next.message.socialPost?.caption &&
+    previous.message.socialPost?.imageUrl === next.message.socialPost?.imageUrl
   );
 }
 
