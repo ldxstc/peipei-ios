@@ -484,7 +484,10 @@ async function requestAuthCookie(path: string, body: JsonRecord) {
     );
   }
 
-  const sessionCookie = normalizeSessionCookie(readSetCookie(response.headers));
+  const token = (payload.json as { token?: string } | null)?.token;
+  const sessionCookie = token
+    ? normalizeSessionCookie(`peipei.session_token=${token}`)
+    : normalizeSessionCookie(readSetCookie(response.headers));
 
   if (!sessionCookie) {
     throw new ApiError('The session cookie was not returned by the server.', 500);
