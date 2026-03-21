@@ -8,15 +8,18 @@ import {
 } from 'react';
 
 import {
+  type AuthResult,
   type AuthUser,
-  getSession,
   signInWithEmail,
   signUpWithEmail,
 } from '../lib/api';
 import {
-  deleteStoredSessionCookie,
-  getStoredSessionCookie,
-  setStoredSessionCookie,
+  deleteStoredSessionToken,
+  deleteStoredSessionUser,
+  getStoredSessionToken,
+  getStoredSessionUser,
+  setStoredSessionToken,
+  setStoredSessionUser,
 } from '../lib/auth-storage';
 import {
   getOnboardingPending,
@@ -29,7 +32,7 @@ type OnboardingStatus = 'loading' | 'pending' | 'complete';
 type AuthContextValue = {
   completeOnboarding: () => Promise<void>;
   onboardingStatus: OnboardingStatus;
-  refreshSession: () => Promise<void>;
+  refreshSession: (nextUser?: Partial<AuthUser>) => Promise<void>;
   sessionCookie: string | null;
   status: AuthStatus;
   user: AuthUser | null;
@@ -53,8 +56,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
     async function restoreSession() {
       try {
-        const [storedCookie, onboardingPending] = await Promise.all([
-          getStoredSessionCookie(),
+        const [storedToken, storedUser, onboardingPending] = await Promise.all([
+          getStoredSessionToken(),
+          getStoredSessionUser(),
           getOnboardingPending(),
         ]);
 
@@ -62,26 +66,29 @@ export function AuthProvider({ children }: PropsWithChildren) {
           setOnboardingStatus(onboardingPending ? 'pending' : 'complete');
         }
 
-        if (!storedCookie) {
+        if (!storedToken || !storedUser) {
+          await Promise.all([
+            deleteStoredSessionToken(),
+            deleteStoredSessionUser(),
+          ]);
+
           if (isMounted) {
             setStatus('unauthenticated');
           }
+
           return;
         }
 
-        const session = await getSession(storedCookie);
-
-        if (!session.user) {
-          throw new Error('Session expired');
-        }
-
         if (isMounted) {
-          setSessionCookie(storedCookie);
-          setUser(session.user);
+          setSessionCookie(storedToken);
+          setUser(storedUser);
           setStatus('authenticated');
         }
       } catch {
-        await deleteStoredSessionCookie();
+        await Promise.all([
+          deleteStoredSessionToken(),
+          deleteStoredSessionUser(),
+        ]);
 
         if (isMounted) {
           setOnboardingStatus('complete');
@@ -100,58 +107,61 @@ export function AuthProvider({ children }: PropsWithChildren) {
   }, []);
 
   async function finalizeAuth(
-    cookie: string,
+    authResult: AuthResult,
     nextOnboardingStatus?: Exclude<OnboardingStatus, 'loading'>,
   ) {
-    const session = await getSession(cookie);
-
-    if (!session.user) {
-      throw new Error('The account session could not be loaded.');
-    }
-
     const resolvedOnboardingStatus =
       nextOnboardingStatus ?? ((await getOnboardingPending()) ? 'pending' : 'complete');
 
-    await setStoredSessionCookie(cookie);
-    await setOnboardingPending(resolvedOnboardingStatus === 'pending');
+    await Promise.all([
+      setStoredSessionToken(authResult.sessionToken),
+      setStoredSessionUser(authResult.user),
+      setOnboardingPending(resolvedOnboardingStatus === 'pending'),
+    ]);
     queryClient.clear();
-    setSessionCookie(cookie);
-    setUser(session.user);
+    setSessionCookie(authResult.sessionToken);
+    setUser(authResult.user);
     setOnboardingStatus(resolvedOnboardingStatus);
     setStatus('authenticated');
   }
 
   async function signIn(email: string, password: string) {
-    const cookie = await signInWithEmail(email, password);
-    await finalizeAuth(cookie);
+    const authResult = await signInWithEmail(email, password);
+    await finalizeAuth(authResult);
   }
 
   async function signUp(name: string, email: string, password: string) {
-    const cookie = await signUpWithEmail(name, email, password);
-    await finalizeAuth(cookie, 'pending');
+    const authResult = await signUpWithEmail(name, email, password);
+    await finalizeAuth(authResult, 'pending');
   }
 
   async function signOut() {
-    await deleteStoredSessionCookie();
+    await Promise.all([
+      deleteStoredSessionToken(),
+      deleteStoredSessionUser(),
+    ]);
     queryClient.clear();
     setSessionCookie(null);
     setUser(null);
     setStatus('unauthenticated');
   }
 
-  async function refreshSession() {
-    if (!sessionCookie) {
+  async function refreshSession(nextUser?: Partial<AuthUser>) {
+    if (!sessionCookie || !user) {
       return;
     }
 
-    const session = await getSession(sessionCookie);
+    const mergedUser: AuthUser = {
+      email: typeof nextUser?.email === 'string' ? nextUser.email : user.email,
+      id: typeof nextUser?.id === 'string' ? nextUser.id : user.id,
+      name:
+        typeof nextUser?.name === 'string' || nextUser?.name === null
+          ? nextUser.name
+          : user.name,
+    };
 
-    if (!session.user) {
-      await signOut();
-      return;
-    }
-
-    setUser(session.user);
+    await setStoredSessionUser(mergedUser);
+    setUser(mergedUser);
     setStatus('authenticated');
   }
 

@@ -21,6 +21,11 @@ export type SessionResponse = {
   user: AuthUser | null;
 };
 
+export type AuthResult = {
+  sessionToken: string;
+  user: AuthUser;
+};
+
 export type CoachMessage = {
   id: string;
   role: 'user' | 'assistant';
@@ -320,12 +325,57 @@ function normalizeSessionCookie(rawCookie: string | null) {
     return null;
   }
 
-  const tokenMatch = rawCookie.match(/peipei\.session_token=[^;,\s]+/);
+  const tokenMatch = rawCookie.match(
+    /(?:__Secure-)?peipei\.session_token=[^;,\s]+/,
+  );
   if (tokenMatch?.[0]) {
     return tokenMatch[0];
   }
 
   return rawCookie.split(';')[0]?.trim() || null;
+}
+
+function normalizeSessionToken(rawToken: string | null | undefined) {
+  if (!rawToken) {
+    return null;
+  }
+
+  const cookieMatch = rawToken.match(
+    /(?:__Secure-)?peipei\.session_token=([^;,\s]+)/,
+  );
+
+  if (cookieMatch?.[1]) {
+    return cookieMatch[1];
+  }
+
+  const normalized = rawToken.trim();
+  return normalized || null;
+}
+
+function buildSessionCookieHeader(sessionToken: string) {
+  return [
+    `peipei.session_token=${sessionToken}`,
+    `__Secure-peipei.session_token=${sessionToken}`,
+  ].join('; ');
+}
+
+function applySessionAuthHeaders(
+  headers: Headers,
+  sessionToken?: string | null,
+) {
+  const normalizedToken = normalizeSessionToken(sessionToken);
+
+  if (!normalizedToken) {
+    return;
+  }
+
+  if (!headers.has('Cookie')) {
+    headers.set('Cookie', buildSessionCookieHeader(normalizedToken));
+  }
+
+  if (!headers.has('X-Better-Auth-Token')) {
+    headers.set('X-Better-Auth-Token', normalizedToken);
+  }
 }
 
 function normalizeUnitsPreference(value: unknown): UnitsPreference {
@@ -428,10 +478,11 @@ function buildMessageFromPayload(payload: JsonValue | null, fallbackText: string
 async function requestJson<T>(
   path: string,
   init: RequestInit = {},
-  sessionCookie?: string | null,
+  sessionToken?: string | null,
 ) {
   const headers = new Headers(init.headers);
   applyTrustedOriginHeaders(headers);
+  applySessionAuthHeaders(headers, sessionToken);
 
   if (!headers.has('Accept')) {
     headers.set('Accept', 'application/json');
@@ -439,10 +490,6 @@ async function requestJson<T>(
 
   if (init.body && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
-  }
-
-  if (sessionCookie) {
-    headers.set('Cookie', sessionCookie);
   }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -462,7 +509,7 @@ async function requestJson<T>(
   return (payload.json as T) ?? ({} as T);
 }
 
-async function requestAuthCookie(path: string, body: JsonRecord) {
+async function requestAuthResult(path: string, body: JsonRecord) {
   const headers = new Headers({
     Accept: 'application/json',
     'Content-Type': 'application/json',
@@ -484,20 +531,41 @@ async function requestAuthCookie(path: string, body: JsonRecord) {
     );
   }
 
-  const token = (payload.json as { token?: string } | null)?.token;
-  const sessionCookie = token
-    ? normalizeSessionCookie(`peipei.session_token=${token}`)
-    : normalizeSessionCookie(readSetCookie(response.headers));
+  const token =
+    normalizeSessionToken((payload.json as { token?: string } | null)?.token) ??
+    normalizeSessionToken(normalizeSessionCookie(readSetCookie(response.headers)));
+  const userRecord = asRecord(payload.json)?.user as
+    | {
+        email?: unknown;
+        id?: unknown;
+        name?: unknown;
+      }
+    | undefined;
 
-  if (!sessionCookie) {
-    throw new ApiError('The session cookie was not returned by the server.', 500);
+  if (!token) {
+    throw new ApiError('No token returned by the server.', 500);
   }
 
-  return sessionCookie;
+  if (
+    !userRecord ||
+    typeof userRecord.id !== 'string' ||
+    typeof userRecord.email !== 'string'
+  ) {
+    throw new ApiError('No user returned by the server.', 500);
+  }
+
+  return {
+    sessionToken: token,
+    user: {
+      email: userRecord.email,
+      id: userRecord.id,
+      name: typeof userRecord.name === 'string' ? userRecord.name : null,
+    },
+  } satisfies AuthResult;
 }
 
 export async function signInWithEmail(email: string, password: string) {
-  return requestAuthCookie('/api/auth/sign-in/email', { email, password });
+  return requestAuthResult('/api/auth/sign-in/email', { email, password });
 }
 
 export async function signUpWithEmail(
@@ -505,22 +573,26 @@ export async function signUpWithEmail(
   email: string,
   password: string,
 ) {
-  return requestAuthCookie('/api/auth/sign-up/email', { name, email, password });
+  return requestAuthResult('/api/auth/sign-up/email', {
+    name,
+    email,
+    password,
+  });
 }
 
-export async function getSession(sessionCookie: string) {
+export async function getSession(sessionToken: string) {
   return requestJson<SessionResponse>(
     '/api/auth/get-session',
     { method: 'GET' },
-    sessionCookie,
+    sessionToken,
   );
 }
 
-export async function getCoachChat(sessionCookie: string) {
+export async function getCoachChat(sessionToken: string) {
   const payload = await requestJson<{
     messages?: unknown[];
     hasMore?: boolean;
-  }>('/api/coach/chat', { method: 'GET' }, sessionCookie);
+  }>('/api/coach/chat', { method: 'GET' }, sessionToken);
 
   return {
     messages: Array.isArray(payload.messages)
@@ -531,7 +603,7 @@ export async function getCoachChat(sessionCookie: string) {
 }
 
 export async function openCoachChatStream(
-  sessionCookie: string,
+  sessionToken: string,
   body: {
     attachments?: ChatAttachmentInput[];
     contextType: 'general';
@@ -541,9 +613,9 @@ export async function openCoachChatStream(
   const hasAttachments = Boolean(body.attachments?.length);
   const headers = new Headers({
     Accept: 'text/event-stream',
-    Cookie: sessionCookie,
   });
   applyTrustedOriginHeaders(headers);
+  applySessionAuthHeaders(headers, sessionToken);
   let requestBody: BodyInit;
 
   if (hasAttachments) {
@@ -589,11 +661,11 @@ export async function openCoachChatStream(
   return response;
 }
 
-export async function getSettingsPanel(sessionCookie: string) {
+export async function getSettingsPanel(sessionToken: string) {
   const payload = await requestJson<unknown>(
     '/api/settings/panel',
     { method: 'GET' },
-    sessionCookie,
+    sessionToken,
   );
 
   const displayName = stringifyValue(
@@ -684,7 +756,7 @@ export async function getSettingsPanel(sessionCookie: string) {
 }
 
 export async function patchUserSettings(
-  sessionCookie: string,
+  sessionToken: string,
   input: SettingsSaveInput,
 ) {
   return requestJson<unknown>(
@@ -700,31 +772,31 @@ export async function patchUserSettings(
       }),
       method: 'PATCH',
     },
-    sessionCookie,
+    sessionToken,
   );
 }
 
-export async function syncGarmin(sessionCookie: string) {
+export async function syncGarmin(sessionToken: string) {
   return requestJson<unknown>(
     '/api/garmin/sync',
     { method: 'POST' },
-    sessionCookie,
+    sessionToken,
   );
 }
 
-export async function disconnectGarmin(sessionCookie: string) {
+export async function disconnectGarmin(sessionToken: string) {
   return requestJson<unknown>(
     '/api/garmin/disconnect',
     { method: 'POST' },
-    sessionCookie,
+    sessionToken,
   );
 }
 
-export async function getCoachSidebar(sessionCookie: string) {
+export async function getCoachSidebar(sessionToken: string) {
   const payload = await requestJson<unknown>(
     '/api/coach/sidebar',
     { method: 'GET' },
-    sessionCookie,
+    sessionToken,
   );
 
   const recentRunsSource =
@@ -822,16 +894,16 @@ export async function getCoachSidebar(sessionCookie: string) {
 }
 
 export async function registerPushToken(
-  sessionCookie: string,
+  sessionToken: string,
   token: string,
   platform: 'ios' | 'android',
 ) {
   const headers = new Headers({
     Accept: 'application/json',
     'Content-Type': 'application/json',
-    Cookie: sessionCookie,
   });
   applyTrustedOriginHeaders(headers);
+  applySessionAuthHeaders(headers, sessionToken);
 
   const response = await fetch(`${API_BASE_URL}/api/user/push-token`, {
     body: JSON.stringify({
@@ -862,7 +934,7 @@ export async function registerPushToken(
 }
 
 export async function createCoachSocialPost(
-  sessionCookie: string,
+  sessionToken: string,
   content: string,
 ) {
   const payload = await requestJson<unknown>(
@@ -871,7 +943,7 @@ export async function createCoachSocialPost(
       body: JSON.stringify({ content }),
       method: 'POST',
     },
-    sessionCookie,
+    sessionToken,
   );
 
   const normalized = normalizeMessage({

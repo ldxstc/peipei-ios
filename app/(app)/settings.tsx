@@ -77,7 +77,7 @@ export default function SettingsScreen() {
         units,
       });
       await settingsQuery.refetch();
-      await refreshSession();
+      await refreshSession({ name: displayName });
     },
     onSuccess: () => {
       Alert.alert('Saved', 'Your settings were updated.');
