@@ -1,8 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
+import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -47,6 +48,7 @@ const MESSAGE_MAX_WIDTH = '82%';
 
 export default function CoachScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { sessionCookie, signOut, user } = useAuth();
   const [composerValue, setComposerValue] = useState('');
   const [expandedMessageIds, setExpandedMessageIds] = useState<
@@ -279,15 +281,18 @@ export default function CoachScreen() {
             {user?.name ? `${user.name}'s long run` : 'Daily conversation'}
           </Text>
         </View>
-        <Pressable
-          onPress={() => void signOut()}
-          style={({ pressed }) => [
-            styles.headerAction,
-            pressed && styles.buttonPressed,
-          ]}
-        >
-          <Text style={styles.headerActionText}>Sign out</Text>
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable
+            accessibilityLabel="Open settings"
+            onPress={() => router.push('/settings')}
+            style={({ pressed }) => [
+              styles.iconButton,
+              pressed && styles.buttonPressed,
+            ]}
+          >
+            <Ionicons color={colors.text} name="settings-outline" size={18} />
+          </Pressable>
+        </View>
       </View>
 
       <FlatList
@@ -646,17 +651,20 @@ const styles = StyleSheet.create({
     lineHeight: 34,
     marginTop: spacing.xs,
   },
-  headerAction: {
+  headerActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  iconButton: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
     borderColor: colors.border,
     borderRadius: radii.pill,
     borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  headerActionText: {
-    color: colors.muted,
-    fontSize: 13,
-    fontWeight: '600',
+    height: 38,
+    justifyContent: 'center',
+    width: 38,
   },
   list: {
     flex: 1,

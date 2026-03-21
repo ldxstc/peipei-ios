@@ -32,6 +32,30 @@ export type CoachChatResponse = {
   hasMore: boolean;
 };
 
+export type UnitsPreference = 'metric' | 'imperial';
+
+export type CoachLanguagePreference = 'en' | 'zh-Hans';
+
+export type SettingsSaveInput = {
+  displayName: string;
+  units: UnitsPreference;
+  coachLanguage: CoachLanguagePreference;
+  customInstructions: string;
+};
+
+export type SettingsPanelData = SettingsSaveInput & {
+  accountEmail: string;
+  billing: {
+    isPro: boolean;
+    tierLabel: string;
+  };
+  garmin: {
+    connected: boolean;
+    email: string;
+  };
+  raw: unknown;
+};
+
 export type ChatRequestMessage = Pick<
   CoachMessage,
   'id' | 'role' | 'content' | 'createdAt'
@@ -51,8 +75,56 @@ export function createLocalId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function getValueAtPath(source: unknown, path: string) {
+  let current: unknown = source;
+
+  for (const segment of path.split('.')) {
+    const record = asRecord(current);
+
+    if (!record || !(segment in record)) {
+      return undefined;
+    }
+
+    current = record[segment];
+  }
+
+  return current;
+}
+
+function firstPresentValue(source: unknown, paths: string[]) {
+  for (const path of paths) {
+    const value = getValueAtPath(source, path);
+
+    if (value !== undefined && value !== null && value !== '') {
+      return value;
+    }
+  }
+
+  return undefined;
+}
+
 function normalizeRole(role: string | undefined) {
   return role === 'user' ? 'user' : 'assistant';
+}
+
+function stringifyValue(value: unknown) {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+
+  return '';
 }
 
 function coerceText(value: unknown) {
@@ -82,6 +154,28 @@ function coerceText(value: unknown) {
   }
 
   return '';
+}
+
+function coerceBoolean(value: unknown) {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'number') {
+    return value > 0;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.toLowerCase();
+    return (
+      normalized === 'true' ||
+      normalized === 'connected' ||
+      normalized === 'active' ||
+      normalized === 'yes'
+    );
+  }
+
+  return false;
 }
 
 function normalizeMessage(value: unknown): CoachMessage {
@@ -146,6 +240,46 @@ function normalizeSessionCookie(rawCookie: string | null) {
   }
 
   return rawCookie.split(';')[0]?.trim() || null;
+}
+
+function normalizeUnitsPreference(value: unknown): UnitsPreference {
+  const normalized = stringifyValue(value).toLowerCase();
+
+  if (normalized.includes('imp') || normalized.includes('mile')) {
+    return 'imperial';
+  }
+
+  return 'metric';
+}
+
+function normalizeCoachLanguagePreference(
+  value: unknown,
+): CoachLanguagePreference {
+  const normalized = stringifyValue(value).toLowerCase();
+
+  if (
+    normalized.includes('zh') ||
+    normalized.includes('chinese') ||
+    normalized.includes('简')
+  ) {
+    return 'zh-Hans';
+  }
+
+  return 'en';
+}
+
+function normalizeTierLabel(value: unknown) {
+  const normalized = stringifyValue(value).trim();
+
+  if (!normalized) {
+    return 'Free';
+  }
+
+  if (normalized.toLowerCase().includes('pro')) {
+    return 'Pro';
+  }
+
+  return normalized;
 }
 
 function buildMessageFromPayload(payload: JsonValue | null, fallbackText: string) {
@@ -295,6 +429,137 @@ export async function openCoachChatStream(
   }
 
   return response;
+}
+
+export async function getSettingsPanel(sessionCookie: string) {
+  const payload = await requestJson<unknown>(
+    '/api/settings/panel',
+    { method: 'GET' },
+    sessionCookie,
+  );
+
+  const displayName = stringifyValue(
+    firstPresentValue(payload, [
+      'profile.displayName',
+      'profile.name',
+      'displayName',
+      'name',
+      'user.name',
+    ]),
+  );
+  const units = normalizeUnitsPreference(
+    firstPresentValue(payload, [
+      'profile.units',
+      'preferences.units',
+      'units',
+      'user.units',
+    ]),
+  );
+  const coachLanguage = normalizeCoachLanguagePreference(
+    firstPresentValue(payload, [
+      'profile.coachLanguage',
+      'profile.language',
+      'coachLanguage',
+      'coach.language',
+      'language',
+    ]),
+  );
+  const customInstructions = stringifyValue(
+    firstPresentValue(payload, [
+      'coachInstructions.text',
+      'coachInstructions',
+      'coach.instructions',
+      'customInstructions',
+      'instructions',
+    ]),
+  );
+  const garminConnected = coerceBoolean(
+    firstPresentValue(payload, [
+      'garmin.connected',
+      'garmin.isConnected',
+      'garmin.status',
+      'integrations.garmin.connected',
+    ]),
+  );
+  const garminEmail = stringifyValue(
+    firstPresentValue(payload, [
+      'garmin.email',
+      'garmin.accountEmail',
+      'integrations.garmin.email',
+      'garmin.userEmail',
+    ]),
+  );
+  const tierLabel = normalizeTierLabel(
+    firstPresentValue(payload, [
+      'billing.tierLabel',
+      'billing.tier',
+      'subscription.tierLabel',
+      'subscription.tier',
+      'tier',
+      'plan.tier',
+    ]),
+  );
+  const accountEmail = stringifyValue(
+    firstPresentValue(payload, [
+      'account.email',
+      'user.email',
+      'email',
+    ]),
+  );
+
+  return {
+    accountEmail,
+    billing: {
+      isPro: tierLabel.toLowerCase() === 'pro',
+      tierLabel,
+    },
+    coachLanguage,
+    customInstructions,
+    displayName,
+    garmin: {
+      connected: garminConnected,
+      email: garminEmail,
+    },
+    raw: payload,
+    units,
+  } satisfies SettingsPanelData;
+}
+
+export async function patchUserSettings(
+  sessionCookie: string,
+  input: SettingsSaveInput,
+) {
+  return requestJson<unknown>(
+    '/api/user/settings',
+    {
+      body: JSON.stringify({
+        customInstructions: input.customInstructions,
+        profile: {
+          coachLanguage: input.coachLanguage,
+          displayName: input.displayName,
+          units: input.units,
+        },
+      }),
+      method: 'PATCH',
+    },
+    sessionCookie,
+  );
+}
+
+export async function syncGarmin(sessionCookie: string) {
+  return requestJson<unknown>(
+    '/api/garmin/sync',
+    { method: 'POST' },
+    sessionCookie,
+  );
+}
+
+export async function disconnectGarmin(sessionCookie: string) {
+  return requestJson<unknown>(
+    '/api/garmin/disconnect',
+    { method: 'POST' },
+    sessionCookie,
+  );
 }
 
 export function extractTextChunk(payload: unknown): string {

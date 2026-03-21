@@ -11,6 +11,18 @@ export default function AppLayout() {
           backgroundColor: colors.background,
         },
       }}
-    />
+    >
+      <Stack.Screen name="index" />
+      <Stack.Screen
+        name="settings"
+        options={{
+          animation: 'slide_from_bottom',
+          contentStyle: {
+            backgroundColor: 'transparent',
+          },
+          presentation: 'transparentModal',
+        }}
+      />
+    </Stack>
   );
 }

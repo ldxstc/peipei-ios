@@ -22,6 +22,7 @@ import {
 type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
 
 type AuthContextValue = {
+  refreshSession: () => Promise<void>;
   sessionCookie: string | null;
   status: AuthStatus;
   user: AuthUser | null;
@@ -113,9 +114,26 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setStatus('unauthenticated');
   }
 
+  async function refreshSession() {
+    if (!sessionCookie) {
+      return;
+    }
+
+    const session = await getSession(sessionCookie);
+
+    if (!session.user) {
+      await signOut();
+      return;
+    }
+
+    setUser(session.user);
+    setStatus('authenticated');
+  }
+
   return (
     <AuthContext.Provider
       value={{
+        refreshSession,
         sessionCookie,
         status,
         user,
