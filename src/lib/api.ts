@@ -96,6 +96,12 @@ export type ChatRequestMessage = Pick<
   'id' | 'role' | 'content' | 'createdAt'
 >;
 
+export type ChatAttachmentInput = {
+  name: string;
+  type: string;
+  uri: string;
+};
+
 export class ApiError extends Error {
   status: number;
 
@@ -508,16 +514,45 @@ export async function getCoachChat(sessionCookie: string) {
 
 export async function openCoachChatStream(
   sessionCookie: string,
-  body: { messages: ChatRequestMessage[]; contextType: 'general' },
+  body: {
+    attachments?: ChatAttachmentInput[];
+    contextType: 'general';
+    messages: ChatRequestMessage[];
+  },
 ) {
+  const hasAttachments = Boolean(body.attachments?.length);
+  const headers = new Headers({
+    Accept: 'text/event-stream',
+    Cookie: sessionCookie,
+  });
+  let requestBody: BodyInit;
+
+  if (hasAttachments) {
+    const formData = new FormData();
+    formData.append('messages', JSON.stringify(body.messages));
+    formData.append('contextType', body.contextType);
+
+    for (const attachment of body.attachments ?? []) {
+      formData.append('attachments', {
+        name: attachment.name,
+        type: attachment.type,
+        uri: attachment.uri,
+      } as unknown as Blob);
+    }
+
+    requestBody = formData;
+  } else {
+    headers.set('Content-Type', 'application/json');
+    requestBody = JSON.stringify({
+      contextType: body.contextType,
+      messages: body.messages,
+    });
+  }
+
   const response = await fetch(`${API_BASE_URL}/api/coach/chat`, {
     method: 'POST',
-    headers: {
-      Accept: 'text/event-stream',
-      'Content-Type': 'application/json',
-      Cookie: sessionCookie,
-    },
-    body: JSON.stringify(body),
+    headers,
+    body: requestBody,
   });
 
   if (!response.ok) {
