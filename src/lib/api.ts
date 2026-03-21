@@ -76,6 +76,10 @@ export type CoachSidebarData = {
   };
 };
 
+export type PushRegistrationResult = {
+  registered: boolean;
+};
+
 export type ChatRequestMessage = Pick<
   CoachMessage,
   'id' | 'role' | 'content' | 'createdAt'
@@ -695,6 +699,43 @@ export async function getCoachSidebar(sessionCookie: string) {
         ) || '0',
     },
   } satisfies CoachSidebarData;
+}
+
+export async function registerPushToken(
+  sessionCookie: string,
+  token: string,
+  platform: 'ios' | 'android',
+) {
+  const response = await fetch(`${API_BASE_URL}/api/user/push-token`, {
+    body: JSON.stringify({
+      platform,
+      token,
+    }),
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      Cookie: sessionCookie,
+    },
+    method: 'POST',
+  });
+
+  if (!response.ok) {
+    const payload = await readResponsePayload(response);
+    console.log('[push-token placeholder]', {
+      message: payload.text,
+      platform,
+      status: response.status,
+      token,
+    });
+
+    return {
+      registered: false,
+    } satisfies PushRegistrationResult;
+  }
+
+  return {
+    registered: true,
+  } satisfies PushRegistrationResult;
 }
 
 export function extractTextChunk(payload: unknown): string {

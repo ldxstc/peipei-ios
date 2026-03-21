@@ -9,6 +9,7 @@ import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { PushNotificationBridge } from '../src/components/notifications/push-notification-bridge';
 import { colors } from '../src/design/tokens';
 import { AuthProvider, useAuth } from '../src/providers/auth-provider';
 
@@ -93,6 +94,7 @@ function RootNavigator({ fontsLoaded }: { fontsLoaded: boolean }) {
         <Stack.Screen name="(auth)" />
         <Stack.Screen name="(app)" />
       </Stack>
+      <PushNotificationBridge />
     </>
   );
 }
