@@ -25,11 +25,18 @@ export type CoachMessage = {
   role: 'user' | 'assistant';
   content: string;
   createdAt: string;
+  messageType?: 'text' | 'social_post';
+  socialPost?: SocialPostCard;
 };
 
 export type CoachChatResponse = {
   messages: CoachMessage[];
   hasMore: boolean;
+};
+
+export type SocialPostCard = {
+  caption: string;
+  imageUrl: string;
 };
 
 export type UnitsPreference = 'metric' | 'imperial';
@@ -207,7 +214,37 @@ function coerceBoolean(value: unknown) {
 }
 
 function normalizeMessage(value: unknown): CoachMessage {
-  const message = (value ?? {}) as Partial<CoachMessage>;
+  const message = (value ?? {}) as Partial<CoachMessage> & {
+    type?: string;
+  };
+  const contentRecord = asRecord(message.content);
+  const topLevelRecord = asRecord(value);
+  const isSocialPost =
+    message.messageType === 'social_post' ||
+    message.type === 'social_post' ||
+    contentRecord?.type === 'social_post' ||
+    topLevelRecord?.type === 'social_post';
+  const socialPost = isSocialPost
+    ? {
+        caption:
+          stringifyValue(
+            firstPresentValue(contentRecord ?? topLevelRecord, [
+              'caption',
+              'text',
+              'content',
+              'message',
+            ]),
+          ) || coerceText(message.content),
+        imageUrl: stringifyValue(
+          firstPresentValue(contentRecord ?? topLevelRecord, [
+            'imageUrl',
+            'image',
+            'url',
+            'asset.url',
+          ]),
+        ),
+      }
+    : undefined;
 
   return {
     id:
@@ -215,11 +252,15 @@ function normalizeMessage(value: unknown): CoachMessage {
         ? message.id
         : createLocalId(normalizeRole(message.role)),
     role: normalizeRole(message.role),
-    content: coerceText(message.content),
+    content: socialPost?.caption || coerceText(message.content),
     createdAt:
       typeof message.createdAt === 'string'
         ? message.createdAt
         : new Date().toISOString(),
+    messageType:
+      socialPost?.imageUrl && socialPost.caption ? 'social_post' : 'text',
+    socialPost:
+      socialPost?.imageUrl && socialPost.caption ? socialPost : undefined,
   };
 }
 
@@ -761,6 +802,34 @@ export async function registerPushToken(
   return {
     registered: true,
   } satisfies PushRegistrationResult;
+}
+
+export async function createCoachSocialPost(
+  sessionCookie: string,
+  content: string,
+) {
+  const payload = await requestJson<unknown>(
+    '/api/coach/social',
+    {
+      body: JSON.stringify({ content }),
+      method: 'POST',
+    },
+    sessionCookie,
+  );
+
+  const normalized = normalizeMessage({
+    content: payload,
+    createdAt: new Date().toISOString(),
+    id: createLocalId('social'),
+    role: 'assistant',
+    type: 'social_post',
+  });
+
+  if (!normalized.socialPost) {
+    throw new ApiError('The social card response was incomplete.', 500);
+  }
+
+  return normalized.socialPost;
 }
 
 export function extractTextChunk(payload: unknown): string {

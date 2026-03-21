@@ -57,7 +57,8 @@
       ],
       "expo-secure-store",
       "expo-font",
-      "expo-widgets"
+      "expo-widgets",
+      "expo-sharing"
     ]
   }
 }

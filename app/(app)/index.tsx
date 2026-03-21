@@ -6,9 +6,11 @@ import * as ImagePicker from 'expo-image-picker';
 import { Stack, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
+  ActionSheetIOS,
   ActivityIndicator,
   Alert,
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -34,12 +36,18 @@ import {
   type CoachMessage,
   ApiError,
   consumeTextStream,
+  createCoachSocialPost,
   createLocalId,
   getCoachChat,
   getCoachSidebar,
   openCoachChatStream,
 } from '../../src/lib/api';
 import { syncPeiPeiWidgets } from '../../src/lib/peipei-widgets';
+import {
+  openLinkedInShare,
+  saveRemoteImageToLibrary,
+  shareRemoteImage,
+} from '../../src/lib/social-sharing';
 import { useAuth } from '../../src/providers/auth-provider';
 
 type DensityConfig = {
@@ -57,6 +65,9 @@ export default function CoachScreen() {
   const [expandedMessageIds, setExpandedMessageIds] = useState<
     Record<string, true>
   >({});
+  const [generatedSocialMessages, setGeneratedSocialMessages] = useState<
+    CoachMessage[]
+  >([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [transientMessages, setTransientMessages] = useState<CoachMessage[] | null>(
@@ -77,7 +88,8 @@ export default function CoachScreen() {
   });
 
   const baseMessages = chatQuery.data?.messages ?? [];
-  const conversation = transientMessages ?? baseMessages;
+  const displayBaseMessages = [...baseMessages, ...generatedSocialMessages];
+  const conversation = transientMessages ?? displayBaseMessages;
   const displayMessages = [...conversation].sort(
     (left, right) =>
       new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
@@ -111,6 +123,120 @@ export default function CoachScreen() {
   async function handleCopy(message: CoachMessage) {
     await Clipboard.setStringAsync(message.content);
     await Haptics.selectionAsync();
+  }
+
+  async function handleSaveSocialImage(message: CoachMessage) {
+    if (!message.socialPost?.imageUrl) {
+      return;
+    }
+
+    await saveRemoteImageToLibrary(message.socialPost.imageUrl);
+    Alert.alert('Saved', 'The image was saved to Photos.');
+  }
+
+  async function handleShareSocialImage(message: CoachMessage) {
+    if (!message.socialPost?.imageUrl) {
+      return;
+    }
+
+    await shareRemoteImage(message.socialPost.imageUrl);
+  }
+
+  async function handleCreateSocialPost(message: CoachMessage) {
+    if (!sessionCookie) {
+      return;
+    }
+
+    const socialPost = await createCoachSocialPost(sessionCookie, message.content);
+    const socialMessage: CoachMessage = {
+      content: socialPost.caption,
+      createdAt: new Date().toISOString(),
+      id: createLocalId('social-post'),
+      messageType: 'social_post',
+      role: 'assistant',
+      socialPost,
+    };
+
+    setGeneratedSocialMessages((current) => [...current, socialMessage]);
+    await shareRemoteImage(socialPost.imageUrl);
+  }
+
+  function runAction(action: () => Promise<void>) {
+    action().catch((error: unknown) => {
+      const message =
+        error instanceof ApiError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : 'The action could not be completed.';
+
+      Alert.alert('Unable to continue', message);
+    });
+  }
+
+  function showCoachActionSheet(message: CoachMessage) {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          cancelButtonIndex: 3,
+          options: ['Copy text', 'Share as image', 'Share to LinkedIn', 'Cancel'],
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 0) {
+            runAction(() => handleCopy(message));
+          } else if (buttonIndex === 1) {
+            runAction(() => handleCreateSocialPost(message));
+          } else if (buttonIndex === 2) {
+            runAction(() => openLinkedInShare(message.content));
+          }
+        },
+      );
+      return;
+    }
+
+    Alert.alert('Share coach message', message.content, [
+      { text: 'Copy text', onPress: () => runAction(() => handleCopy(message)) },
+      {
+        text: 'Share as image',
+        onPress: () => runAction(() => handleCreateSocialPost(message)),
+      },
+      {
+        text: 'Share to LinkedIn',
+        onPress: () => runAction(() => openLinkedInShare(message.content)),
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }
+
+  function showSocialPostActionSheet(message: CoachMessage) {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          cancelButtonIndex: 3,
+          options: ['Copy Caption', 'Save Image', 'Share', 'Cancel'],
+        },
+        (buttonIndex) => {
+          if (buttonIndex === 0) {
+            runAction(() => handleCopy(message));
+          } else if (buttonIndex === 1) {
+            runAction(() => handleSaveSocialImage(message));
+          } else if (buttonIndex === 2) {
+            runAction(() => handleShareSocialImage(message));
+          }
+        },
+      );
+      return;
+    }
+
+    Alert.alert('Social post actions', message.content, [
+      { text: 'Copy Caption', onPress: () => runAction(() => handleCopy(message)) },
+      {
+        text: 'Save Image',
+        onPress: () => runAction(() => handleSaveSocialImage(message)),
+      },
+      { text: 'Share', onPress: () => runAction(() => handleShareSocialImage(message)) },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   }
 
   async function handleAttachment() {
@@ -371,12 +497,27 @@ export default function CoachScreen() {
               density={density}
               isExpanded={isExpanded}
               message={item}
-              onLongPress={() => void handleCopy(item)}
+              onCopyCaption={() => runAction(() => handleCopy(item))}
+              onLongPress={() => {
+                if (item.messageType === 'social_post') {
+                  showSocialPostActionSheet(item);
+                  return;
+                }
+
+                if (item.role === 'assistant') {
+                  showCoachActionSheet(item);
+                  return;
+                }
+
+                runAction(() => handleCopy(item));
+              }}
               onPress={() => {
                 if (canExpand) {
                   toggleExpanded(item.id);
                 }
               }}
+              onSaveImage={() => runAction(() => handleSaveSocialImage(item))}
+              onShareImage={() => runAction(() => handleShareSocialImage(item))}
               showTypingIndicator={
                 waitingForFirstToken &&
                 isStreaming &&
@@ -467,16 +608,22 @@ function MessageRow({
   density,
   isExpanded,
   message,
+  onCopyCaption,
   onLongPress,
   onPress,
+  onSaveImage,
+  onShareImage,
   showTypingIndicator,
 }: {
   dayLabel: string | null;
   density: DensityConfig;
   isExpanded: boolean;
   message: CoachMessage;
+  onCopyCaption: () => void;
   onLongPress: () => void;
   onPress: () => void;
+  onSaveImage: () => void;
+  onShareImage: () => void;
   showTypingIndicator: boolean;
 }) {
   const isUser = message.role === 'user';
@@ -505,6 +652,15 @@ function MessageRow({
         >
           {showTypingIndicator ? (
             <TypingIndicator />
+          ) : message.messageType === 'social_post' && message.socialPost ? (
+            <SocialPostCard
+              caption={message.socialPost.caption}
+              imageUrl={message.socialPost.imageUrl}
+              onCopyCaption={onCopyCaption}
+              onLongPress={onLongPress}
+              onSaveImage={onSaveImage}
+              onShareImage={onShareImage}
+            />
           ) : (
             <Text
               numberOfLines={
@@ -515,6 +671,60 @@ function MessageRow({
               {message.content}
             </Text>
           )}
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function SocialPostCard({
+  caption,
+  imageUrl,
+  onCopyCaption,
+  onLongPress,
+  onSaveImage,
+  onShareImage,
+}: {
+  caption: string;
+  imageUrl: string;
+  onCopyCaption: () => void;
+  onLongPress: () => void;
+  onSaveImage: () => void;
+  onShareImage: () => void;
+}) {
+  return (
+    <View style={styles.socialCard}>
+      <Pressable delayLongPress={180} onLongPress={onLongPress}>
+        <Image source={{ uri: imageUrl }} style={styles.socialImage} />
+      </Pressable>
+      <Text style={styles.socialCaption}>{caption}</Text>
+      <View style={styles.socialActions}>
+        <Pressable
+          onPress={onCopyCaption}
+          style={({ pressed }) => [
+            styles.socialActionButton,
+            pressed && styles.buttonPressed,
+          ]}
+        >
+          <Text style={styles.socialActionText}>Copy Caption</Text>
+        </Pressable>
+        <Pressable
+          onPress={onSaveImage}
+          style={({ pressed }) => [
+            styles.socialActionButton,
+            pressed && styles.buttonPressed,
+          ]}
+        >
+          <Text style={styles.socialActionText}>Save Image</Text>
+        </Pressable>
+        <Pressable
+          onPress={onShareImage}
+          style={({ pressed }) => [
+            styles.socialActionButton,
+            pressed && styles.buttonPressed,
+          ]}
+        >
+          <Text style={styles.socialActionText}>Share</Text>
         </Pressable>
       </View>
     </View>
@@ -800,6 +1010,41 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 16,
     lineHeight: 24,
+  },
+  socialCard: {
+    gap: spacing.md,
+  },
+  socialImage: {
+    backgroundColor: colors.background,
+    borderRadius: radii.input,
+    height: 220,
+    width: '100%',
+  },
+  socialCaption: {
+    color: colors.text,
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  socialActions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  socialActionButton: {
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderColor: colors.border,
+    borderRadius: radii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 34,
+    paddingHorizontal: spacing.sm,
+  },
+  socialActionText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   typingRow: {
     alignItems: 'center',
