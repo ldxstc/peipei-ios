@@ -1,4 +1,5 @@
 const API_BASE_URL = 'https://peipei-run.com';
+const TRUSTED_WEB_ORIGIN = 'https://www.peipei-run.com';
 
 type JsonValue =
   | string
@@ -114,6 +115,16 @@ export class ApiError extends Error {
 
 export function createLocalId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function applyTrustedOriginHeaders(headers: Headers) {
+  if (!headers.has('Origin')) {
+    headers.set('Origin', TRUSTED_WEB_ORIGIN);
+  }
+
+  if (!headers.has('Referer')) {
+    headers.set('Referer', TRUSTED_WEB_ORIGIN);
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -420,6 +431,7 @@ async function requestJson<T>(
   sessionCookie?: string | null,
 ) {
   const headers = new Headers(init.headers);
+  applyTrustedOriginHeaders(headers);
 
   if (!headers.has('Accept')) {
     headers.set('Accept', 'application/json');
@@ -451,12 +463,15 @@ async function requestJson<T>(
 }
 
 async function requestAuthCookie(path: string, body: JsonRecord) {
+  const headers = new Headers({
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+  });
+  applyTrustedOriginHeaders(headers);
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify(body),
   });
 
@@ -525,6 +540,7 @@ export async function openCoachChatStream(
     Accept: 'text/event-stream',
     Cookie: sessionCookie,
   });
+  applyTrustedOriginHeaders(headers);
   let requestBody: BodyInit;
 
   if (hasAttachments) {
@@ -807,16 +823,19 @@ export async function registerPushToken(
   token: string,
   platform: 'ios' | 'android',
 ) {
+  const headers = new Headers({
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+    Cookie: sessionCookie,
+  });
+  applyTrustedOriginHeaders(headers);
+
   const response = await fetch(`${API_BASE_URL}/api/user/push-token`, {
     body: JSON.stringify({
       platform,
       token,
     }),
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      Cookie: sessionCookie,
-    },
+    headers,
     method: 'POST',
   });
 
