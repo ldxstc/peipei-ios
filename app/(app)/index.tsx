@@ -43,6 +43,7 @@ import {
   type NativeSyntheticEvent,
   type PanResponderInstance,
   type TextInputContentSizeChangeEventData,
+  type ViewToken,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -70,6 +71,7 @@ type DensityTier = 'today' | 'yesterday' | 'this_week' | 'older';
 
 type ChatItem =
   | {
+      animationDelay: number;
       data: CoachMessage;
       densityTier: DensityTier;
       id: string;
@@ -98,6 +100,7 @@ type ComposerAttachment = {
 };
 
 type MessageRowProps = {
+  animationDelay: number;
   densityTier: DensityTier;
   isCascadeClosing: boolean;
   isFirstInSequence: boolean;
@@ -118,11 +121,13 @@ type CoachContentModel = {
 };
 
 const INITIAL_VISIBLE_MESSAGES = 40;
-const INPUT_MIN_HEIGHT = 40;
+const INPUT_MIN_HEIGHT = 44;
 const INPUT_MAX_HEIGHT = 120;
 const CASCADE_TIMESTAMP_STEP_MS = 30_000;
 const LOAD_MORE_BATCH = 20;
 const TABLET_BREAKPOINT = 960;
+const MESSAGE_ENTRY_STAGGER_MS = 800;
+const MESSAGE_ENTRY_EASING = Easing.bezier(0.25, 0.1, 0.25, 1);
 const DATA_REFERENCE_PATTERN =
   /(\d{1,2}:\d{2}\s*\/\s*(?:km|mi)|\d{2,3}\s*(?:bpm|次\/分)|\d+(?:\.\d+)?\s*(?:km|公里|K)(?![a-zA-Z]))/gi;
 const INLINE_TOKEN_PATTERN =
@@ -218,7 +223,7 @@ function getDensityTier(createdAt: Date, now: Date): DensityTier {
 }
 
 function getSequenceSpacing(tier: DensityTier, isFirstInSequence: boolean) {
-  return isFirstInSequence ? 16 : 4;
+  return isFirstInSequence ? 24 : 12;
 }
 
 function formatDayLabel(date: Date) {
@@ -246,6 +251,26 @@ function formatDayLabel(date: Date) {
   return date
     .toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
     .toUpperCase();
+}
+
+function formatStickyDayLabel(date: Date) {
+  const now = new Date();
+  const diffInDays = Math.round(
+    (startOfDay(now).getTime() - startOfDay(date).getTime()) / 86_400_000,
+  );
+
+  if (diffInDays <= 0) {
+    return 'Today';
+  }
+
+  if (diffInDays === 1) {
+    return 'Yesterday';
+  }
+
+  return date.toLocaleDateString('en-US', {
+    day: 'numeric',
+    month: 'short',
+  });
 }
 
 function formatMessageTimestamp(date: Date) {
@@ -308,6 +333,14 @@ function createInlineRuns(
       if (isDataReference(cleanPart)) {
         return (
           <Text key={`${keyPrefix}-data-${index}`} style={styles.dataReferenceText}>
+            {cleanPart}
+          </Text>
+        );
+      }
+
+      if (isBold) {
+        return (
+          <Text key={`${keyPrefix}-bold-${index}`} style={[baseStyle, styles.inlineStrong]}>
             {cleanPart}
           </Text>
         );
@@ -481,6 +514,7 @@ function buildChatItems(
           }
 
           items.push({
+            animationDelay: paragraphIndex * MESSAGE_ENTRY_STAGGER_MS,
             data: {
               ...message,
               content: paragraph,
@@ -489,7 +523,7 @@ function buildChatItems(
             densityTier,
             id: `${message.id}-p${paragraphIndex}`,
             isCascadeClosing:
-              paragraphIndex === paragraphs.length - 1 && paragraph.trim().length < 20,
+              paragraphIndex === paragraphs.length - 1 && paragraph.trim().length < 25,
             isFirstInSequence:
               paragraphIndex === 0 ? isFirstInSequence : false,
             type: 'message',
@@ -497,19 +531,21 @@ function buildChatItems(
         }
       } else {
         items.push({
+          animationDelay: 0,
           data: message,
           densityTier,
           id: message.id,
           isCascadeClosing:
             isLastInSequence &&
             !isFirstInSequence &&
-            message.content.trim().length < 20,
+            message.content.trim().length < 25,
           isFirstInSequence,
           type: 'message',
         });
       }
     } else {
       items.push({
+        animationDelay: 0,
         data: message,
         densityTier,
         id: message.id,
@@ -723,6 +759,9 @@ function CoachScreenContent() {
   const [meterSamples, setMeterSamples] = useState<number[]>([]);
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
   const [replyingTo, setReplyingTo] = useState<CoachMessage | null>(null);
+  const [stickyDayLabel, setStickyDayLabel] = useState(() =>
+    formatStickyDayLabel(new Date()),
+  );
   const [typingStartedAt, setTypingStartedAt] = useState<number | null>(null);
   const [visibleMessageCount, setVisibleMessageCount] = useState(
     INITIAL_VISIBLE_MESSAGES,
@@ -746,6 +785,30 @@ function CoachScreenContent() {
 
   const isTabletLayout = width >= TABLET_BREAKPOINT;
   const isRecording = recorderState.isRecording;
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 25,
+  }).current;
+  const onViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: Array<ViewToken<ChatItem>> }) => {
+      const sortedItems = [...viewableItems].sort(
+        (left, right) => (left.index ?? 0) - (right.index ?? 0),
+      );
+      const anchorItem = sortedItems[sortedItems.length - 1]?.item;
+
+      if (!anchorItem) {
+        return;
+      }
+
+      if (anchorItem.type === 'day_label') {
+        setStickyDayLabel(formatStickyDayLabel(anchorItem.date));
+        return;
+      }
+
+      if (anchorItem.type === 'message') {
+        setStickyDayLabel(formatStickyDayLabel(new Date(anchorItem.data.createdAt)));
+      }
+    },
+  ).current;
   const {
     chatItems,
     mergedMessagesDesc,
@@ -1294,6 +1357,7 @@ function CoachScreenContent() {
 
     return (
       <MessageRow
+        animationDelay={item.animationDelay}
         densityTier={item.densityTier}
         isCascadeClosing={item.isCascadeClosing}
         isFirstInSequence={item.isFirstInSequence}
@@ -1312,7 +1376,7 @@ function CoachScreenContent() {
       <Stack.Screen options={{ headerShown: false }} />
 
       <LinearGradient
-        colors={['rgba(15, 14, 12, 0.98)', 'rgba(15, 14, 12, 0)']}
+        colors={['rgba(0, 0, 0, 1)', 'rgba(0, 0, 0, 0)']}
         pointerEvents="none"
         style={styles.topStatusFade}
       />
@@ -1324,38 +1388,65 @@ function CoachScreenContent() {
       >
         <View
           onLayout={handleHeaderLayout}
-          style={[styles.header, { paddingTop: insets.top + spacing.md }]}
+          style={[
+            styles.header,
+            {
+              minHeight: insets.top + 88,
+              paddingTop: insets.top + 14,
+            },
+          ]}
         >
           <LinearGradient
             colors={[
-              'rgba(15, 14, 12, 0.98)',
-              'rgba(15, 14, 12, 0.82)',
-              'rgba(15, 14, 12, 0)',
+              'rgba(0, 0, 0, 1)',
+              'rgba(0, 0, 0, 0.94)',
+              'rgba(0, 0, 0, 0)',
             ]}
             pointerEvents="none"
             style={styles.headerGradient}
           />
 
-          <View style={styles.headerContent}>
-            <Pressable
-              accessibilityHint="Long press to open settings."
-              accessibilityLabel="PeiPei header"
-              accessibilityRole="button"
-              delayLongPress={280}
-              onLongPress={() => {
-                setIsSidebarOpen(false);
-                router.push('/settings');
-              }}
-              style={({ pressed }) => [
-                styles.headerTitleButton,
-                pressed && styles.headerTitlePressed,
-              ]}
-            >
-              <Text style={styles.headerEyebrow}>Coach</Text>
+          <Pressable
+            accessibilityHint="Long press to open settings."
+            accessibilityLabel="PeiPei header"
+            accessibilityRole="button"
+            delayLongPress={280}
+            onLongPress={() => {
+              setIsSidebarOpen(false);
+              router.push('/settings');
+            }}
+            style={({ pressed }) => [
+              styles.headerContent,
+              pressed && styles.headerTitlePressed,
+            ]}
+          >
+            <View style={styles.headerAvatar}>
+              <Text style={styles.headerAvatarText}>P</Text>
+            </View>
+
+            <View style={styles.headerTitleBlock}>
+              <Text style={styles.headerEyebrow}>COACH</Text>
               <Text style={styles.headerTitle}>pei·pei</Text>
-            </Pressable>
-          </View>
+            </View>
+          </Pressable>
+
+          <View style={styles.headerDivider} />
         </View>
+
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.stickyDateContainer,
+            {
+              opacity: scrollIndicatorOpacity,
+              top: headerHeight + 8,
+            },
+          ]}
+        >
+          <View style={styles.stickyDatePill}>
+            <Text style={styles.stickyDatePillText}>{stickyDayLabel}</Text>
+          </View>
+        </Animated.View>
 
         {chatQuery.isLoading && !persistedMessages.length ? (
           <ChatLoadingState />
@@ -1389,7 +1480,7 @@ function CoachScreenContent() {
               style={styles.listShell}
             >
               <LinearGradient
-                colors={['rgba(15, 14, 12, 0.98)', 'rgba(15, 14, 12, 0)']}
+                colors={['rgba(0, 0, 0, 1)', 'rgba(0, 0, 0, 0)']}
                 pointerEvents="none"
                 style={styles.contentTopFade}
               />
@@ -1428,11 +1519,13 @@ function CoachScreenContent() {
                 onContentSizeChange={(_, height) => {
                   setListContentHeight(height);
                 }}
+                onViewableItemsChanged={onViewableItemsChanged}
                 removeClippedSubviews
                 renderItem={renderChatItem}
                 scrollEventThrottle={16}
                 showsVerticalScrollIndicator={false}
                 style={styles.list}
+                viewabilityConfig={viewabilityConfig}
                 windowSize={10}
                 ListEmptyComponent={
                   <View style={styles.emptyState}>
@@ -1446,7 +1539,7 @@ function CoachScreenContent() {
               />
 
               <LinearGradient
-                colors={['rgba(15, 14, 12, 0)', 'rgba(15, 14, 12, 0.96)']}
+                colors={['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 1)']}
                 pointerEvents="none"
                 style={styles.listEdgeGradient}
               />
@@ -1524,9 +1617,10 @@ function CoachScreenContent() {
                   ]}
                 >
                   <Feather
-                    color={colors.muted}
+                    color="#636366"
                     name="paperclip"
-                    size={16}
+                    size={24}
+                    strokeWidth={1.5}
                   />
                 </Pressable>
 
@@ -1541,8 +1635,8 @@ function CoachScreenContent() {
                     setComposerValue(nextValue);
                   }}
                   onContentSizeChange={handleComposerContentSizeChange}
-                  placeholder=""
-                  placeholderTextColor={colors.muted}
+                  placeholder="Message pei·pei..."
+                  placeholderTextColor="#48484A"
                   returnKeyType="default"
                   style={[styles.input, { height: inputHeight }]}
                   value={composerValue}
@@ -1566,7 +1660,12 @@ function CoachScreenContent() {
                     {isStreaming ? (
                       <ActivityIndicator color={colors.text} size="small" />
                     ) : (
-                      <Ionicons color={colors.accent} name="arrow-up" size={16} />
+                      <Feather
+                        color="#636366"
+                        name="arrow-up"
+                        size={24}
+                        strokeWidth={1.5}
+                      />
                     )}
                   </Pressable>
                 ) : (
@@ -1589,9 +1688,10 @@ function CoachScreenContent() {
                     ]}
                   >
                     <Feather
-                      color={colors.muted}
+                      color="#636366"
                       name="mic"
-                      size={16}
+                      size={24}
+                      strokeWidth={1.5}
                     />
                   </Pressable>
                 )}
@@ -1735,6 +1835,7 @@ const CoachMessageContent = memo(function CoachMessageContent({
 });
 
 const MessageRow = memo(function MessageRow({
+  animationDelay,
   densityTier,
   isCascadeClosing,
   isFirstInSequence,
@@ -1748,6 +1849,7 @@ const MessageRow = memo(function MessageRow({
   const translateX = useRef(new Animated.Value(0)).current;
   const replyTriggeredRef = useRef(false);
   const entryOpacity = useRef(new Animated.Value(0)).current;
+  const entryTranslateY = useRef(new Animated.Value(20)).current;
   const isUser = message.role === 'user';
   const messageBody = getMessageSummary(message);
   const rowPanResponder = useMemo(
@@ -1763,13 +1865,23 @@ const MessageRow = memo(function MessageRow({
   const timestampLabel = formatMessageTimestamp(new Date(message.createdAt));
 
   useEffect(() => {
-    Animated.timing(entryOpacity, {
-      duration: 200,
-      easing: Easing.out(Easing.ease),
-      toValue: isPending ? 0.6 : 1,
-      useNativeDriver: true,
-    }).start();
-  }, [entryOpacity, isPending]);
+    Animated.parallel([
+      Animated.timing(entryOpacity, {
+        delay: animationDelay,
+        duration: 350,
+        easing: MESSAGE_ENTRY_EASING,
+        toValue: isPending ? 0.6 : 1,
+        useNativeDriver: true,
+      }),
+      Animated.timing(entryTranslateY, {
+        delay: animationDelay,
+        duration: 350,
+        easing: MESSAGE_ENTRY_EASING,
+        toValue: 0,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [animationDelay, entryOpacity, entryTranslateY, isPending]);
 
   return (
     <Animated.View
@@ -1778,17 +1890,11 @@ const MessageRow = memo(function MessageRow({
         {
           marginTop: getSequenceSpacing(densityTier, isFirstInSequence),
           opacity: entryOpacity,
-          transform: [{ translateX }],
+          transform: [{ translateX }, { translateY: entryTranslateY }],
         },
       ]}
       {...rowPanResponder.panHandlers}
     >
-      {!isUser && isFirstInSequence ? (
-        <View style={styles.coachSide}>
-          <CoachIndicator />
-        </View>
-      ) : null}
-
       <View
         style={[
           styles.messageBodyColumn,
@@ -1805,6 +1911,7 @@ const MessageRow = memo(function MessageRow({
           style={[
             styles.messageBubble,
             isUser ? styles.runnerBubble : styles.coachBubble,
+            !isUser && isCascadeClosing && styles.closingBubbleAccent,
             message.messageType === 'social_post' && styles.socialBubble,
           ]}
         >
@@ -1919,10 +2026,6 @@ const TypingIndicatorRow = memo(function TypingIndicatorRow({
 
   return (
     <View style={[styles.messageRow, { marginTop: spacing.md }]}>
-      <View style={styles.coachSide}>
-        <CoachIndicator />
-      </View>
-
       <View style={styles.messageBodyColumn}>
         <View style={[styles.messageBubble, styles.coachBubble, styles.typingBubble]}>
           <View style={styles.typingDotsRow}>
@@ -2194,7 +2297,9 @@ function areMessageRowPropsEqual(
   next: Readonly<MessageRowProps>,
 ) {
   return (
+    previous.animationDelay === next.animationDelay &&
     previous.densityTier === next.densityTier &&
+    previous.isCascadeClosing === next.isCascadeClosing &&
     previous.isFirstInSequence === next.isFirstInSequence &&
     previous.isPending === next.isPending &&
     previous.message.id === next.message.id &&
@@ -2303,10 +2408,8 @@ const styles = StyleSheet.create({
     width: 280,
   },
   header: {
-    borderBottomColor: 'rgba(58,58,55,0.3)',
-    borderBottomWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
-    paddingBottom: spacing.lg,
+    paddingBottom: 12,
     paddingHorizontal: 20,
     position: 'relative',
   },
@@ -2315,29 +2418,71 @@ const styles = StyleSheet.create({
     bottom: -24,
   },
   headerContent: {
-    alignItems: 'flex-start',
+    alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'flex-start',
   },
-  headerTitleButton: {
-    alignSelf: 'flex-start',
+  headerAvatar: {
+    alignItems: 'center',
+    backgroundColor: '#30D158',
+    borderRadius: 18,
+    height: 36,
+    justifyContent: 'center',
+    width: 36,
+  },
+  headerAvatarText: {
+    color: '#F5F5F7',
+    fontFamily: fonts.ui,
+    fontSize: 15,
+    fontWeight: '500',
   },
   headerTitlePressed: {
     opacity: 0.92,
   },
+  headerTitleBlock: {
+    marginLeft: 12,
+  },
   headerEyebrow: {
-    color: colors.coachLabel,
-    fontFamily: fonts.mono,
+    color: '#6E6E73',
+    fontFamily: fonts.ui,
     fontSize: 11,
-    letterSpacing: 0.88,
-    textTransform: 'uppercase',
+    fontWeight: '500',
+    letterSpacing: 1.8,
   },
   headerTitle: {
-    color: colors.text,
+    color: '#F5F5F7',
     fontFamily: fonts.brand,
-    fontSize: 20,
-    lineHeight: 24,
-    marginTop: spacing.sm,
+    fontSize: 28,
+    fontWeight: '600',
+    lineHeight: 32,
+    marginTop: 4,
+  },
+  headerDivider: {
+    backgroundColor: '#38383A',
+    height: StyleSheet.hairlineWidth,
+    marginTop: 12,
+    width: '100%',
+  },
+  stickyDateContainer: {
+    alignItems: 'center',
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    zIndex: 11,
+  },
+  stickyDatePill: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(44, 44, 46, 0.9)',
+    borderRadius: 14,
+    height: 28,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+  stickyDatePillText: {
+    color: '#8E8E93',
+    fontFamily: fonts.ui,
+    fontSize: 12,
+    fontWeight: '600',
   },
   list: {
     flex: 1,
@@ -2347,7 +2492,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   contentTopFade: {
-    height: 30,
+    height: 40,
     left: 0,
     position: 'absolute',
     right: 0,
@@ -2410,31 +2555,37 @@ const styles = StyleSheet.create({
   },
   messageBubble: {
     borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingBottom: 28,
+    paddingHorizontal: 20,
+    paddingTop: 16,
   },
   coachBubble: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    maxWidth: '88%',
+    backgroundColor: 'rgba(28, 28, 30, 0.85)',
+    maxWidth: '82%',
+    overflow: 'hidden',
   },
   runnerBubble: {
-    backgroundColor: 'rgba(255,255,255,0.02)',
-    borderBottomRightRadius: 6,
+    backgroundColor: 'rgba(28, 28, 30, 0.72)',
     borderRadius: 16,
-    maxWidth: '72%',
+    maxWidth: '82%',
+    overflow: 'hidden',
+  },
+  closingBubbleAccent: {
+    borderLeftColor: '#30D158',
+    borderLeftWidth: 3,
   },
   socialBubble: {
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.sm,
   },
   coachMessageText: {
-    color: colors.text,
+    color: '#E8E8ED',
     fontFamily: fonts.coach,
-    fontSize: 15,
-    lineHeight: 25,
+    fontSize: 16.5,
+    lineHeight: 24,
   },
   coachClosingMessageText: {
-    color: 'rgba(242,237,228,0.7)',
+    color: 'rgba(232,232,237,0.7)',
     fontStyle: 'italic',
   },
   coachFirstLineText: {
@@ -2445,10 +2596,10 @@ const styles = StyleSheet.create({
     lineHeight: 25,
   },
   runnerMessageText: {
-    color: '#FFFFFF',
+    color: '#E8E8ED',
     fontFamily: fonts.ui,
-    fontSize: 15,
-    lineHeight: 25,
+    fontSize: 16.5,
+    lineHeight: 24,
     textAlign: 'right',
   },
   messageTextContainer: {
@@ -2517,6 +2668,7 @@ const styles = StyleSheet.create({
     lineHeight: 8,
   },
   inlineStrong: {
+    color: '#E8E8ED',
     fontWeight: '600',
   },
   inlineEmphasis: {
@@ -2528,10 +2680,10 @@ const styles = StyleSheet.create({
   dataReferenceText: {
     backgroundColor: 'transparent',
     borderRadius: 0,
-    color: colors.text,
+    color: '#E8E8ED',
     fontFamily: fonts.mono,
-    fontSize: 15,
-    lineHeight: 25,
+    fontSize: 16.5,
+    lineHeight: 24,
     paddingHorizontal: 0,
     paddingVertical: 0,
   },
@@ -2543,12 +2695,14 @@ const styles = StyleSheet.create({
     right: 0,
   },
   bubbleTimestampText: {
-    alignSelf: 'flex-end',
-    color: 'rgba(242,237,228,0.25)',
+    color: '#48484A',
     fontFamily: fonts.ui,
-    fontSize: 10,
-    lineHeight: 12,
-    paddingTop: 6,
+    fontSize: 11,
+    lineHeight: 13,
+    position: 'absolute',
+    right: 0,
+    bottom: -12,
+    textAlign: 'right',
   },
   typingBubble: {
     minHeight: 52,
@@ -2634,12 +2788,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   composerContainer: {
-    backgroundColor: colors.background,
-    borderTopColor: colors.border,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    backgroundColor: '#000000',
     gap: spacing.sm,
-    paddingHorizontal: 20,
-    paddingTop: spacing.md,
+    minHeight: 78,
+    paddingHorizontal: 16,
+    paddingTop: 10,
   },
   replyBar: {
     alignItems: 'center',
@@ -2759,48 +2912,48 @@ const styles = StyleSheet.create({
   },
   inputBar: {
     alignItems: 'center',
-    backgroundColor: colors.background,
+    backgroundColor: '#000000',
     flexDirection: 'row',
-    gap: 8,
+    gap: 12,
     paddingHorizontal: 0,
-    paddingVertical: 2,
+    paddingVertical: 6,
   },
   attachButton: {
     alignItems: 'center',
-    height: 28,
+    height: 24,
     justifyContent: 'center',
-    opacity: 0.4,
+    opacity: 1,
     width: 24,
   },
   input: {
-    backgroundColor: 'rgba(255,255,255,0.02)',
-    borderColor: 'rgba(255,255,255,0.05)',
+    backgroundColor: '#2C2C2E',
+    borderColor: 'transparent',
     borderRadius: 22,
-    borderWidth: StyleSheet.hairlineWidth,
-    color: colors.text,
+    borderWidth: 0,
+    color: '#E8E8ED',
     flex: 1,
     fontSize: 15,
-    lineHeight: 25,
+    lineHeight: 20,
     maxHeight: INPUT_MAX_HEIGHT,
     minHeight: INPUT_MIN_HEIGHT,
+    paddingBottom: 12,
     paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 8,
+    paddingTop: 12,
     textAlignVertical: 'center',
   },
   sendButton: {
     alignItems: 'center',
-    alignSelf: 'flex-end',
-    height: 28,
+    alignSelf: 'center',
+    height: 24,
     justifyContent: 'center',
     width: 24,
   },
   micButton: {
     alignItems: 'center',
-    alignSelf: 'flex-end',
-    height: 28,
+    alignSelf: 'center',
+    height: 24,
     justifyContent: 'center',
-    opacity: 0.4,
+    opacity: 1,
     width: 24,
   },
   micButtonActive: {
