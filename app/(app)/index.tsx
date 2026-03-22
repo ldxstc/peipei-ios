@@ -52,6 +52,7 @@ import { colors, fonts, radii, spacing } from '../../src/design/tokens';
 import {
   type ChatAttachmentInput,
   type ChatRequestMessage,
+  type CoachSidebarData,
   type CoachMessage,
   ApiError,
   consumeTextStream,
@@ -81,6 +82,7 @@ type ChatItem =
     }
   | { date: Date; id: string; type: 'day_label' }
   | { id: string; type: 'loading_shimmer' }
+  | { id: string; summary: string; type: 'session_summary' }
   | { id: string; type: 'typing_indicator' };
 
 type CoachErrorPresentation = {
@@ -101,6 +103,7 @@ type ComposerAttachment = {
 
 type MessageRowProps = {
   animationDelay: number;
+  coachBubbleColor: string;
   densityTier: DensityTier;
   isCascadeClosing: boolean;
   isFirstInSequence: boolean;
@@ -108,6 +111,7 @@ type MessageRowProps = {
   message: CoachMessage;
   onCopyCaption: () => void;
   onReply: (message: CoachMessage) => void;
+  runnerBubbleColor: string;
   onSaveImage: () => void;
   onShareImage: () => void;
 };
@@ -128,6 +132,8 @@ const LOAD_MORE_BATCH = 20;
 const TABLET_BREAKPOINT = 960;
 const MESSAGE_ENTRY_STAGGER_MS = 800;
 const MESSAGE_ENTRY_EASING = Easing.bezier(0.25, 0.1, 0.25, 1);
+const COACH_CLOSING_PHRASE_RE =
+  /关手机|明天见|去睡觉|晚安|good night|sleep well|rest up/i;
 const DATA_REFERENCE_PATTERN =
   /(\d{1,2}:\d{2}\s*\/\s*(?:km|mi)|\d{2,3}\s*(?:bpm|次\/分)|\d+(?:\.\d+)?\s*(?:km|公里|K)(?![a-zA-Z]))/gi;
 const INLINE_TOKEN_PATTERN =
@@ -273,6 +279,26 @@ function formatStickyDayLabel(date: Date) {
   });
 }
 
+function buildSessionSummary(sidebarData: CoachSidebarData | undefined) {
+  if (!sidebarData) {
+    return null;
+  }
+
+  const parts = [
+    sidebarData.goalProgress.title,
+    sidebarData.goalProgress.countdown,
+    sidebarData.goalProgress.detail,
+  ]
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (!parts.length) {
+    return null;
+  }
+
+  return `🏃 ${parts.join(' · ')}`;
+}
+
 function formatMessageTimestamp(date: Date) {
   return date.toLocaleTimeString('en-US', {
     hour: 'numeric',
@@ -284,6 +310,31 @@ function getCascadeTimestamp(createdAt: string, paragraphIndex: number) {
   return new Date(
     new Date(createdAt).getTime() + paragraphIndex * CASCADE_TIMESTAMP_STEP_MS,
   ).toISOString();
+}
+
+function getTimeAwareUi(hour: number) {
+  const neutral = {
+    coachBubbleColor: 'rgba(28, 28, 30, 0.85)',
+    coachLabelColor: '#6E6E73',
+    runnerBubbleColor: 'rgba(28, 28, 30, 0.72)',
+  };
+
+  if (hour >= 6 && hour < 12) {
+    return {
+      ...neutral,
+      coachLabelColor: '#7D7462',
+    };
+  }
+
+  if (hour >= 22 || hour < 6) {
+    return {
+      ...neutral,
+      coachBubbleColor: 'rgba(30, 28, 27, 0.87)',
+      runnerBubbleColor: 'rgba(30, 28, 27, 0.74)',
+    };
+  }
+
+  return neutral;
 }
 
 function getMessageSummary(message: CoachMessage) {
@@ -478,6 +529,7 @@ function buildChatItems(
   messagesDesc: CoachMessage[],
   now: Date,
   loadingMore: boolean,
+  sessionSummary: string | null,
   showTypingIndicator: boolean,
 ) {
   const items: ChatItem[] = [];
@@ -571,6 +623,14 @@ function buildChatItems(
     });
   }
 
+  if (sessionSummary) {
+    items.push({
+      id: 'session-summary',
+      summary: sessionSummary,
+      type: 'session_summary',
+    });
+  }
+
   return items;
 }
 
@@ -578,12 +638,14 @@ function buildSafeChatViewState({
   chatData,
   draftMessages,
   isLoadingMore,
+  sessionSummary,
   visibleMessageCount,
   waitingForFirstToken,
 }: {
   chatData: { hasMore?: boolean; messages?: CoachMessage[] } | undefined;
   draftMessages: CoachMessage[];
   isLoadingMore: boolean;
+  sessionSummary: string | null;
   visibleMessageCount: number;
   waitingForFirstToken: boolean;
 }) {
@@ -601,6 +663,7 @@ function buildSafeChatViewState({
       visibleMessagesDesc,
       new Date(),
       isLoadingMore,
+      sessionSummary,
       waitingForFirstToken,
     );
 
@@ -731,6 +794,9 @@ function CoachScreenContent() {
   const scrollIndicatorFadeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+  const avatarScale = useRef(new Animated.Value(1)).current;
+  const avatarOpacity = useRef(new Animated.Value(0.85)).current;
+  const composerBarOpacity = useRef(new Animated.Value(1)).current;
   const scrollIndicatorOpacity = useRef(new Animated.Value(0)).current;
   const scrollIndicatorY = useRef(new Animated.Value(0)).current;
   const shouldStopRecordingRef = useRef(false);
@@ -746,7 +812,9 @@ function CoachScreenContent() {
   const [composerError, setComposerError] = useState<CoachErrorPresentation | null>(
     null,
   );
+  const [composerWakeOverride, setComposerWakeOverride] = useState(false);
   const [composerValue, setComposerValue] = useState('');
+  const [currentHour, setCurrentHour] = useState(() => new Date().getHours());
   const [draftMessages, setDraftMessages] = useState<CoachMessage[]>([]);
   const [headerHeight, setHeaderHeight] = useState(0);
   const [inputHeight, setInputHeight] = useState(INPUT_MIN_HEIGHT);
@@ -789,11 +857,14 @@ function CoachScreenContent() {
     itemVisiblePercentThreshold: 25,
   }).current;
   const onViewableItemsChanged = useRef(
-    ({ viewableItems }: { viewableItems: Array<ViewToken<ChatItem>> }) => {
+    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
       const sortedItems = [...viewableItems].sort(
         (left, right) => (left.index ?? 0) - (right.index ?? 0),
       );
-      const anchorItem = sortedItems[sortedItems.length - 1]?.item;
+      const anchorItem = sortedItems
+        .reverse()
+        .map((entry) => entry.item as ChatItem)
+        .find((item) => item.type === 'day_label' || item.type === 'message');
 
       if (!anchorItem) {
         return;
@@ -809,6 +880,10 @@ function CoachScreenContent() {
       }
     },
   ).current;
+  const sessionSummary = useMemo(
+    () => buildSessionSummary(coachSidebarQuery.data),
+    [coachSidebarQuery.data],
+  );
   const {
     chatItems,
     mergedMessagesDesc,
@@ -819,6 +894,7 @@ function CoachScreenContent() {
         chatData: chatQuery.data,
         draftMessages,
         isLoadingMore,
+        sessionSummary,
         visibleMessageCount,
         waitingForFirstToken,
       }),
@@ -826,25 +902,40 @@ function CoachScreenContent() {
       chatQuery.data,
       draftMessages,
       isLoadingMore,
+      sessionSummary,
       visibleMessageCount,
       waitingForFirstToken,
     ],
   );
+  const lastCoachMessage =
+    mergedMessagesDesc.find(
+      (message) =>
+        message.role === 'assistant' && getMessageSummary(message).trim().length > 0,
+    )?.content ?? '';
+  const shouldRestComposer =
+    COACH_CLOSING_PHRASE_RE.test(stripDisplayMarkup(lastCoachMessage));
+  const isComposerResting = shouldRestComposer && !composerWakeOverride;
+  const timeAwareUi = useMemo(() => getTimeAwareUi(currentHour), [currentHour]);
   const chatErrorPresentation =
     chatQuery.error && !persistedMessages.length
       ? getCoachErrorPresentation(chatQuery.error)
       : null;
 
   useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentHour(new Date().getHours());
+    }, 60_000);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!coachSidebarQuery.data) {
       return;
     }
 
-    const latestCoachMessage =
-      mergedMessagesDesc.find(
-        (message) =>
-          message.role === 'assistant' && getMessageSummary(message).trim().length > 0,
-      )?.content ?? 'PeiPei is ready when you are.';
     const daysToRaceLabel = coachSidebarQuery.data.goalProgress.countdown;
     const daysToRaceNumber = Number(
       daysToRaceLabel.match(/\d+/)?.[0] ?? Number.POSITIVE_INFINITY,
@@ -853,12 +944,59 @@ function CoachScreenContent() {
     void syncPeiPeiWidgets({
       daysToRace: daysToRaceLabel,
       isRaceWeek: Number.isFinite(daysToRaceNumber) && daysToRaceNumber < 7,
-      lastCoachMessage: latestCoachMessage.slice(0, 60),
+      lastCoachMessage: lastCoachMessage.slice(0, 60) || 'PeiPei is ready when you are.',
       plannedWorkout: coachSidebarQuery.data.todayPlan.title,
       trainingStatus: coachSidebarQuery.data.todayPlan.title,
       workoutDistance: coachSidebarQuery.data.todayPlan.distance,
     });
-  }, [coachSidebarQuery.data, mergedMessagesDesc]);
+  }, [coachSidebarQuery.data, lastCoachMessage]);
+
+  useEffect(() => {
+    setComposerWakeOverride(false);
+  }, [lastCoachMessage]);
+
+  useEffect(() => {
+    Animated.timing(composerBarOpacity, {
+      duration: isComposerResting ? 2000 : 180,
+      easing: Easing.out(Easing.ease),
+      toValue: isComposerResting ? 0.4 : 1,
+      useNativeDriver: true,
+    }).start();
+  }, [composerBarOpacity, isComposerResting]);
+
+  useEffect(() => {
+    Animated.timing(avatarOpacity, {
+      duration: 220,
+      easing: Easing.out(Easing.ease),
+      toValue: isStreaming ? 1 : 0.85,
+      useNativeDriver: true,
+    }).start();
+
+    avatarScale.setValue(1);
+
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(avatarScale, {
+          duration: isStreaming ? 750 : 1500,
+          easing: Easing.inOut(Easing.ease),
+          toValue: 1.04,
+          useNativeDriver: true,
+        }),
+        Animated.timing(avatarScale, {
+          duration: isStreaming ? 750 : 1500,
+          easing: Easing.inOut(Easing.ease),
+          toValue: 1,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+
+    pulse.start();
+
+    return () => {
+      pulse.stop();
+    };
+  }, [avatarOpacity, avatarScale, isStreaming]);
 
   useEffect(() => {
     if (isTabletLayout && isSidebarOpen) {
@@ -941,6 +1079,16 @@ function CoachScreenContent() {
       Math.max(INPUT_MIN_HEIGHT, event.nativeEvent.contentSize.height + 12),
     );
     setInputHeight(nextHeight);
+  }
+
+  function wakeComposer() {
+    if (!isComposerResting) {
+      return;
+    }
+
+    composerBarOpacity.stopAnimation();
+    composerBarOpacity.setValue(1);
+    setComposerWakeOverride(true);
   }
 
   function handleReply(message: CoachMessage) {
@@ -1343,9 +1491,14 @@ function CoachScreenContent() {
       return <DayLabelRow label={formatDayLabel(item.date)} />;
     }
 
+    if (item.type === 'session_summary') {
+      return <SessionContinuityRow summary={item.summary} />;
+    }
+
     if (item.type === 'typing_indicator') {
       return (
         <TypingIndicatorRow
+          bubbleColor={timeAwareUi.coachBubbleColor}
           startedAt={typingStartedAt ?? Date.now()}
         />
       );
@@ -1358,6 +1511,7 @@ function CoachScreenContent() {
     return (
       <MessageRow
         animationDelay={item.animationDelay}
+        coachBubbleColor={timeAwareUi.coachBubbleColor}
         densityTier={item.densityTier}
         isCascadeClosing={item.isCascadeClosing}
         isFirstInSequence={item.isFirstInSequence}
@@ -1365,6 +1519,7 @@ function CoachScreenContent() {
         message={item.data}
         onCopyCaption={() => runAction(() => handleCopyCaption(item.data))}
         onReply={handleReply}
+        runnerBubbleColor={timeAwareUi.runnerBubbleColor}
         onSaveImage={() => runAction(() => handleSaveSocialImage(item.data))}
         onShareImage={() => runAction(() => handleShareSocialImage(item.data))}
       />
@@ -1420,12 +1575,22 @@ function CoachScreenContent() {
               pressed && styles.headerTitlePressed,
             ]}
           >
-            <View style={styles.headerAvatar}>
+            <Animated.View
+              style={[
+                styles.headerAvatar,
+                {
+                  opacity: avatarOpacity,
+                  transform: [{ scale: avatarScale }],
+                },
+              ]}
+            >
               <Text style={styles.headerAvatarText}>P</Text>
-            </View>
+            </Animated.View>
 
             <View style={styles.headerTitleBlock}>
-              <Text style={styles.headerEyebrow}>COACH</Text>
+              <Text style={[styles.headerEyebrow, { color: timeAwareUi.coachLabelColor }]}>
+                COACH
+              </Text>
               <Text style={styles.headerTitle}>pei·pei</Text>
             </View>
           </Pressable>
@@ -1605,7 +1770,7 @@ function CoachScreenContent() {
                 </View>
               ) : null}
 
-              <View style={styles.inputBar}>
+              <Animated.View style={[styles.inputBar, { opacity: composerBarOpacity }]}>
                 <Pressable
                   accessibilityHint="Opens camera and photo library options."
                   accessibilityLabel="Add attachment"
@@ -1613,6 +1778,7 @@ function CoachScreenContent() {
                   onPress={handleAttachmentPicker}
                   style={({ pressed }) => [
                     styles.attachButton,
+                    isComposerResting && styles.inputAccessoryResting,
                     pressed && styles.iconControlPressed,
                   ]}
                 >
@@ -1630,15 +1796,22 @@ function CoachScreenContent() {
                   accessibilityLabel="Message composer"
                   blurOnSubmit={false}
                   multiline
+                  onFocus={wakeComposer}
                   onChangeText={(nextValue) => {
                     setComposerError(null);
                     setComposerValue(nextValue);
                   }}
                   onContentSizeChange={handleComposerContentSizeChange}
-                  placeholder="Message pei·pei..."
+                  placeholder={
+                    isComposerResting ? '💤 Coach says rest...' : 'Message pei·pei...'
+                  }
                   placeholderTextColor="#48484A"
                   returnKeyType="default"
-                  style={[styles.input, { height: inputHeight }]}
+                  style={[
+                    styles.input,
+                    isComposerResting && styles.inputResting,
+                    { height: inputHeight },
+                  ]}
                   value={composerValue}
                 />
 
@@ -1653,6 +1826,7 @@ function CoachScreenContent() {
                     }}
                     style={({ pressed }) => [
                       styles.sendButton,
+                      isComposerResting && styles.inputAccessoryResting,
                       pressed && styles.buttonPressed,
                       isStreaming && styles.buttonDisabled,
                     ]}
@@ -1682,6 +1856,7 @@ function CoachScreenContent() {
                     }}
                     style={({ pressed }) => [
                       styles.micButton,
+                      isComposerResting && styles.inputAccessoryResting,
                       pressed && styles.iconControlPressed,
                       (pressed || isRecording || isRecordingStarting) &&
                         styles.micButtonActive,
@@ -1695,7 +1870,7 @@ function CoachScreenContent() {
                     />
                   </Pressable>
                 )}
-              </View>
+              </Animated.View>
             </View>
           </>
         )}
@@ -1732,6 +1907,18 @@ const DayLabelRow = memo(function DayLabelRow({ label }: { label: string }) {
   return (
     <View style={styles.dayLabelRow}>
       <Text style={styles.dayLabelText}>{label}</Text>
+    </View>
+  );
+});
+
+const SessionContinuityRow = memo(function SessionContinuityRow({
+  summary,
+}: {
+  summary: string;
+}) {
+  return (
+    <View style={styles.sessionSummaryRow}>
+      <Text style={styles.sessionSummaryText}>{summary}</Text>
     </View>
   );
 });
@@ -1836,6 +2023,7 @@ const CoachMessageContent = memo(function CoachMessageContent({
 
 const MessageRow = memo(function MessageRow({
   animationDelay,
+  coachBubbleColor,
   densityTier,
   isCascadeClosing,
   isFirstInSequence,
@@ -1843,6 +2031,7 @@ const MessageRow = memo(function MessageRow({
   message,
   onCopyCaption,
   onReply,
+  runnerBubbleColor,
   onSaveImage,
   onShareImage,
 }: MessageRowProps) {
@@ -1911,6 +2100,9 @@ const MessageRow = memo(function MessageRow({
           style={[
             styles.messageBubble,
             isUser ? styles.runnerBubble : styles.coachBubble,
+            {
+              backgroundColor: isUser ? runnerBubbleColor : coachBubbleColor,
+            },
             !isUser && isCascadeClosing && styles.closingBubbleAccent,
             message.messageType === 'social_post' && styles.socialBubble,
           ]}
@@ -2006,8 +2198,10 @@ function ActionPill({
 }
 
 const TypingIndicatorRow = memo(function TypingIndicatorRow({
+  bubbleColor,
   startedAt,
 }: {
+  bubbleColor: string;
   startedAt: number;
 }) {
   const [elapsed, setElapsed] = useState(0);
@@ -2027,7 +2221,14 @@ const TypingIndicatorRow = memo(function TypingIndicatorRow({
   return (
     <View style={[styles.messageRow, { marginTop: spacing.md }]}>
       <View style={styles.messageBodyColumn}>
-        <View style={[styles.messageBubble, styles.coachBubble, styles.typingBubble]}>
+        <View
+          style={[
+            styles.messageBubble,
+            styles.coachBubble,
+            styles.typingBubble,
+            { backgroundColor: bubbleColor },
+          ]}
+        >
           <View style={styles.typingDotsRow}>
             <TypingDot delay={0} isActive={activeCount >= 1} />
             <TypingDot delay={200} isActive={activeCount >= 2} />
@@ -2298,6 +2499,7 @@ function areMessageRowPropsEqual(
 ) {
   return (
     previous.animationDelay === next.animationDelay &&
+    previous.coachBubbleColor === next.coachBubbleColor &&
     previous.densityTier === next.densityTier &&
     previous.isCascadeClosing === next.isCascadeClosing &&
     previous.isFirstInSequence === next.isFirstInSequence &&
@@ -2307,6 +2509,7 @@ function areMessageRowPropsEqual(
     previous.message.content === next.message.content &&
     previous.message.createdAt === next.message.createdAt &&
     previous.message.messageType === next.message.messageType &&
+    previous.runnerBubbleColor === next.runnerBubbleColor &&
     previous.message.socialPost?.caption === next.message.socialPost?.caption &&
     previous.message.socialPost?.imageUrl === next.message.socialPost?.imageUrl
   );
@@ -2523,6 +2726,21 @@ const styles = StyleSheet.create({
     letterSpacing: 0.88,
     textAlign: 'center',
     textTransform: 'uppercase',
+  },
+  sessionSummaryRow: {
+    alignSelf: 'center',
+    backgroundColor: 'rgba(28, 28, 30, 0.5)',
+    borderRadius: 8,
+    marginBottom: 8,
+    marginTop: 24,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  sessionSummaryText: {
+    color: '#48484A',
+    fontFamily: fonts.ui,
+    fontSize: 11,
+    textAlign: 'center',
   },
   messageRow: {
     alignItems: 'flex-start',
@@ -2941,6 +3159,9 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     textAlignVertical: 'center',
   },
+  inputResting: {
+    fontStyle: 'italic',
+  },
   sendButton: {
     alignItems: 'center',
     alignSelf: 'center',
@@ -2958,6 +3179,9 @@ const styles = StyleSheet.create({
   },
   micButtonActive: {
     opacity: 1,
+  },
+  inputAccessoryResting: {
+    opacity: 0.5,
   },
   iconControlPressed: {
     opacity: 0.8,
