@@ -73,6 +73,7 @@ type ChatItem =
       data: CoachMessage;
       densityTier: DensityTier;
       id: string;
+      isCascadeClosing: boolean;
       isFirstInSequence: boolean;
       type: 'message';
     }
@@ -98,6 +99,7 @@ type ComposerAttachment = {
 
 type MessageRowProps = {
   densityTier: DensityTier;
+  isCascadeClosing: boolean;
   isFirstInSequence: boolean;
   isPending: boolean;
   message: CoachMessage;
@@ -118,6 +120,7 @@ type CoachContentModel = {
 const INITIAL_VISIBLE_MESSAGES = 40;
 const INPUT_MIN_HEIGHT = 40;
 const INPUT_MAX_HEIGHT = 120;
+const CASCADE_TIMESTAMP_STEP_MS = 30_000;
 const LOAD_MORE_BATCH = 20;
 const TABLET_BREAKPOINT = 960;
 const DATA_REFERENCE_PATTERN =
@@ -250,6 +253,12 @@ function formatMessageTimestamp(date: Date) {
     hour: 'numeric',
     minute: '2-digit',
   });
+}
+
+function getCascadeTimestamp(createdAt: string, paragraphIndex: number) {
+  return new Date(
+    new Date(createdAt).getTime() + paragraphIndex * CASCADE_TIMESTAMP_STEP_MS,
+  ).toISOString();
 }
 
 function getMessageSummary(message: CoachMessage) {
@@ -449,11 +458,16 @@ function buildChatItems(
 
   (messagesDesc ?? []).forEach((message, index) => {
     const olderMessage = messagesDesc[index + 1];
+    const newerMessage = messagesDesc[index - 1];
     const densityTier = getDensityTier(new Date(message.createdAt), now);
     const isFirstInSequence =
       !olderMessage ||
       olderMessage.role !== message.role ||
       !isSameCalendarDay(message.createdAt, olderMessage.createdAt);
+    const isLastInSequence =
+      !newerMessage ||
+      newerMessage.role !== message.role ||
+      !isSameCalendarDay(message.createdAt, newerMessage.createdAt);
 
     if (message.role === 'assistant' && message.messageType !== 'social_post') {
       const paragraphs = splitDisplayParagraphs(message.content);
@@ -470,9 +484,12 @@ function buildChatItems(
             data: {
               ...message,
               content: paragraph,
+              createdAt: getCascadeTimestamp(message.createdAt, paragraphIndex),
             },
             densityTier,
             id: `${message.id}-p${paragraphIndex}`,
+            isCascadeClosing:
+              paragraphIndex === paragraphs.length - 1 && paragraph.trim().length < 20,
             isFirstInSequence:
               paragraphIndex === 0 ? isFirstInSequence : false,
             type: 'message',
@@ -483,6 +500,10 @@ function buildChatItems(
           data: message,
           densityTier,
           id: message.id,
+          isCascadeClosing:
+            isLastInSequence &&
+            !isFirstInSequence &&
+            message.content.trim().length < 20,
           isFirstInSequence,
           type: 'message',
         });
@@ -492,6 +513,7 @@ function buildChatItems(
         data: message,
         densityTier,
         id: message.id,
+        isCascadeClosing: false,
         isFirstInSequence,
         type: 'message',
       });
@@ -1082,7 +1104,9 @@ function CoachScreenContent() {
 
         const nextAssistantMessage: CoachMessage = {
           content: trimmed,
-          createdAt: new Date(now.getTime() + paragraphIndex + 1).toISOString(),
+          createdAt: new Date(
+            now.getTime() + paragraphIndex * CASCADE_TIMESTAMP_STEP_MS,
+          ).toISOString(),
           id: createLocalId('coach'),
           role: 'assistant',
         };
@@ -1271,6 +1295,7 @@ function CoachScreenContent() {
     return (
       <MessageRow
         densityTier={item.densityTier}
+        isCascadeClosing={item.isCascadeClosing}
         isFirstInSequence={item.isFirstInSequence}
         isPending={pendingIds.has(item.data.id)}
         message={item.data}
@@ -1711,6 +1736,7 @@ const CoachMessageContent = memo(function CoachMessageContent({
 
 const MessageRow = memo(function MessageRow({
   densityTier,
+  isCascadeClosing,
   isFirstInSequence,
   isPending,
   message,
@@ -1801,7 +1827,12 @@ const MessageRow = memo(function MessageRow({
           ) : (
             <View style={styles.messageTextContainer}>
               <View style={styles.markdownBlock}>
-                <Text style={isUser ? styles.runnerMessageText : styles.coachMessageText}>
+                <Text
+                  style={[
+                    isUser ? styles.runnerMessageText : styles.coachMessageText,
+                    !isUser && isCascadeClosing && styles.coachClosingMessageText,
+                  ]}
+                >
                   {renderMarkdown(message.content, isUser ? 'user' : 'coach')}
                 </Text>
               </View>
@@ -2402,6 +2433,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 25,
   },
+  coachClosingMessageText: {
+    color: 'rgba(242,237,228,0.7)',
+    fontStyle: 'italic',
+  },
   coachFirstLineText: {
     color: colors.text,
     fontFamily: fonts.coach,
@@ -2738,10 +2773,10 @@ const styles = StyleSheet.create({
     width: 24,
   },
   input: {
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.02)',
+    borderColor: 'rgba(255,255,255,0.05)',
     borderRadius: 22,
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     color: colors.text,
     flex: 1,
     fontSize: 15,
