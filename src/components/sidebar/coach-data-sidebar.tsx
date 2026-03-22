@@ -189,8 +189,8 @@ export function CoachDataSidebar({
           </SectionCard>
 
           <SectionCard title="Recent Runs">
-            {sidebarQuery.data?.recentRuns.length ? (
-              sidebarQuery.data.recentRuns.map((run) => (
+            {(sidebarQuery.data?.recentRuns ?? []).length ? (
+              (sidebarQuery.data?.recentRuns ?? []).map((run) => (
                 <View key={run.id} style={styles.runRow}>
                   <Text style={styles.runTitle}>{run.title}</Text>
                   <Text style={styles.runSubtitle}>

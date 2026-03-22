@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -110,6 +110,14 @@ type MessageRowProps = {
   onShareImage: () => void;
 };
 
+type CoachContentModel = {
+  cardParagraphs: string[];
+  closingLine: string | null;
+  floatingHeadline: string | null;
+  previewText: string;
+  useSemanticCards: boolean;
+};
+
 const INITIAL_VISIBLE_MESSAGES = 40;
 const INPUT_MIN_HEIGHT = 44;
 const INPUT_MAX_HEIGHT = 120;
@@ -117,9 +125,9 @@ const LOAD_MORE_BATCH = 20;
 const TABLET_BREAKPOINT = 960;
 const COLLAPSE_CHARACTER_THRESHOLD = 132;
 const DATA_REFERENCE_PATTERN =
-  /(\d{1,2}:\d{2}(?:\/km)?|\d{2,3}\s*(?:bpm|次\/分)|\d+(?:\.\d+)?\s*(?:km|公里|K))/gi;
+  /(\d{1,2}:\d{2}\s*\/\s*(?:km|mi)|\d{2,3}\s*(?:bpm|次\/分)|\d+(?:\.\d+)?\s*(?:km|公里|K)(?![a-zA-Z]))/gi;
 const INLINE_TOKEN_PATTERN =
-  /(\*\*[^*]+\*\*|\d{1,2}:\d{2}(?:\/km)?|\d{2,3}\s*(?:bpm|次\/分)|\d+(?:\.\d+)?\s*(?:km|公里|K))/gi;
+  /(\*\*.+?\*\*|\*[^*\n]+\*|\d{1,2}:\d{2}\s*\/\s*(?:km|mi)|\d{2,3}\s*(?:bpm|次\/分)|\d+(?:\.\d+)?\s*(?:km|公里|K)(?![a-zA-Z]))/gi;
 
 function isNetworkFailure(error: unknown) {
   return (
@@ -211,7 +219,7 @@ function getDensityTier(createdAt: Date, now: Date): DensityTier {
 }
 
 function getSequenceSpacing(tier: DensityTier, isFirstInSequence: boolean) {
-  return isFirstInSequence ? 16 : 8;
+  return isFirstInSequence ? 16 : 6;
 }
 
 function formatDayLabel(date: Date) {
@@ -241,12 +249,10 @@ function formatDayLabel(date: Date) {
     .toUpperCase();
 }
 
-function formatTimestamp(date: Date) {
-  return date.toLocaleString('en-US', {
-    day: 'numeric',
+function formatMessageTimestamp(date: Date) {
+  return date.toLocaleTimeString('en-US', {
     hour: 'numeric',
     minute: '2-digit',
-    month: 'short',
   });
 }
 
@@ -282,8 +288,13 @@ function createInlineRuns(
     .split(INLINE_TOKEN_PATTERN)
     .filter(Boolean)
     .map((part, index) => {
-      const isBold = /^\*\*[^*]+\*\*$/.test(part);
-      const cleanPart = isBold ? part.slice(2, -2) : part;
+      const isBold = /^\*\*.+\*\*$/.test(part);
+      const isItalic = !isBold && /^\*[^*\n]+\*$/.test(part);
+      const cleanPart = isBold
+        ? part.slice(2, -2)
+        : isItalic
+          ? part.slice(1, -1)
+          : part;
 
       if (!cleanPart) {
         return null;
@@ -301,7 +312,18 @@ function createInlineRuns(
         return (
           <Text
             key={`${keyPrefix}-bold-${index}`}
-            style={[baseStyle, styles.inlineStrong]}
+            style={[baseStyle, styles.inlineStrong, styles.inlineStrongText]}
+          >
+            {cleanPart}
+          </Text>
+        );
+      }
+
+      if (isItalic) {
+        return (
+          <Text
+            key={`${keyPrefix}-italic-${index}`}
+            style={[baseStyle, styles.inlineEmphasis]}
           >
             {cleanPart}
           </Text>
@@ -321,7 +343,7 @@ function renderMarkdown(
   tone: 'coach' | 'user',
 ): ReactNode[] {
   const cleaned = stripDisplayMarkup(text);
-  const paragraphs = cleaned.split(/\n+/).filter(Boolean);
+  const paragraphs = cleaned.split(/\n\s*\n/).filter(Boolean);
   const baseStyle =
     tone === 'coach' ? styles.coachMessageText : styles.runnerMessageText;
 
@@ -330,8 +352,16 @@ function renderMarkdown(
     const isBullet = /^\*\s+/.test(trimmed);
     const content = `${isBullet ? '• ' : ''}${trimmed
       .replace(/^\*\s+/, '')
-      .replace(/^##+\s*/, '')}`;
+      .replace(/^##+\s*/, '')
+      .split('\n')
+      .map((line) => line.trim())
+      .join('\n')}`;
     const segments = createInlineRuns(content, baseStyle, `paragraph-${index}`);
+    const shouldAddClosingBreath =
+      tone === 'coach' &&
+      index === paragraphs.length - 1 &&
+      index > 0 &&
+      content.length < 20;
 
     if (index === 0) {
       return segments;
@@ -339,11 +369,79 @@ function renderMarkdown(
 
     return [
       <Text key={`markdown-break-${index}`} style={baseStyle}>
-        {'\n'}
+        {'\n\n'}
       </Text>,
+      ...(shouldAddClosingBreath
+        ? [
+            <Text key={`markdown-closing-gap-${index}`} style={styles.markdownClosingGap}>
+              {'\n'}
+            </Text>,
+          ]
+        : []),
       ...segments,
     ];
   });
+}
+
+function splitDisplayParagraphs(text: string) {
+  return stripDisplayMarkup(text)
+    .split(/\n\s*\n/)
+    .map((paragraph) =>
+      paragraph
+        .trim()
+        .replace(/^##+\s*/gm, '')
+        .split('\n')
+        .map((line) => line.trim())
+        .join('\n')
+        .trim(),
+    )
+    .filter(Boolean);
+}
+
+function getCoachContentModel(text: string): CoachContentModel {
+  const paragraphs = splitDisplayParagraphs(text);
+
+  if (!paragraphs.length) {
+    return {
+      cardParagraphs: [],
+      closingLine: null,
+      floatingHeadline: null,
+      previewText: '',
+      useSemanticCards: false,
+    };
+  }
+
+  const useSemanticCards = paragraphs.length >= 3;
+
+  if (!useSemanticCards) {
+    return {
+      cardParagraphs: paragraphs,
+      closingLine: null,
+      floatingHeadline: null,
+      previewText: paragraphs.join('\n\n').trim(),
+      useSemanticCards: false,
+    };
+  }
+
+  const cardParagraphs = [...paragraphs];
+  const firstParagraph = cardParagraphs[0] ?? '';
+  const floatingHeadline =
+    firstParagraph.length > 0 && firstParagraph.length <= 40
+      ? cardParagraphs.shift() ?? null
+      : null;
+  const lastParagraph = cardParagraphs[cardParagraphs.length - 1] ?? '';
+  const closingLine =
+    lastParagraph.length > 0 && lastParagraph.length < 25
+      ? cardParagraphs.pop() ?? null
+      : null;
+
+  return {
+    cardParagraphs,
+    closingLine,
+    floatingHeadline,
+    previewText: [...cardParagraphs, closingLine].filter(Boolean).join('\n\n').trim(),
+    useSemanticCards: true,
+  };
 }
 
 function buildOptimisticContent(text: string, attachments: ComposerAttachment[]) {
@@ -584,6 +682,11 @@ function CoachScreenContent() {
   const inputRef = useRef<TextInput>(null);
   const listRef = useRef<FlatList<ChatItem>>(null);
   const loadMoreInFlightRef = useRef(false);
+  const scrollIndicatorFadeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+  const scrollIndicatorOpacity = useRef(new Animated.Value(0)).current;
+  const scrollIndicatorY = useRef(new Animated.Value(0)).current;
   const shouldStopRecordingRef = useRef(false);
   const { width } = useWindowDimensions();
   const { sessionCookie, signOut } = useAuth();
@@ -606,6 +709,8 @@ function CoachScreenContent() {
   const [isRecordingStarting, setIsRecordingStarting] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
+  const [listContentHeight, setListContentHeight] = useState(1);
+  const [listViewportHeight, setListViewportHeight] = useState(1);
   const [meterSamples, setMeterSamples] = useState<number[]>([]);
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
   const [replyingTo, setReplyingTo] = useState<CoachMessage | null>(null);
@@ -706,6 +811,10 @@ function CoachScreenContent() {
 
   useEffect(() => {
     return () => {
+      if (scrollIndicatorFadeTimeoutRef.current) {
+        clearTimeout(scrollIndicatorFadeTimeoutRef.current);
+      }
+
       if (recorderState.isRecording) {
         recorder.stop().catch(() => {
           // Ignore recorder cleanup errors on screen unmount.
@@ -781,6 +890,42 @@ function CoachScreenContent() {
   function clearReply() {
     setReplyingTo(null);
   }
+
+  function scheduleScrollIndicatorFade() {
+    if (scrollIndicatorFadeTimeoutRef.current) {
+      clearTimeout(scrollIndicatorFadeTimeoutRef.current);
+    }
+
+    scrollIndicatorFadeTimeoutRef.current = setTimeout(() => {
+      Animated.timing(scrollIndicatorOpacity, {
+        duration: 180,
+        easing: Easing.out(Easing.ease),
+        toValue: 0,
+        useNativeDriver: true,
+      }).start();
+    }, 1000);
+  }
+
+  function revealScrollIndicator() {
+    scrollIndicatorOpacity.stopAnimation((value) => {
+      if (value < 0.98) {
+        Animated.timing(scrollIndicatorOpacity, {
+          duration: 120,
+          easing: Easing.out(Easing.ease),
+          toValue: 1,
+          useNativeDriver: true,
+        }).start();
+      }
+    });
+    scheduleScrollIndicatorFade();
+  }
+
+  const scrollableDistance = Math.max(1, listContentHeight - listViewportHeight);
+  const scrollIndicatorHeight =
+    listContentHeight > listViewportHeight
+      ? Math.max(24, (listViewportHeight * listViewportHeight) / listContentHeight)
+      : 0;
+  const scrollIndicatorTravel = Math.max(0, listViewportHeight - scrollIndicatorHeight);
 
   async function loadOlderMessages() {
     if (loadMoreInFlightRef.current) {
@@ -1141,6 +1286,12 @@ function CoachScreenContent() {
     <View style={[styles.screen, isTabletLayout && styles.tabletShell]}>
       <Stack.Screen options={{ headerShown: false }} />
 
+      <LinearGradient
+        colors={['rgba(15, 14, 12, 0.98)', 'rgba(15, 14, 12, 0)']}
+        pointerEvents="none"
+        style={styles.topStatusFade}
+      />
+
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={headerHeight}
@@ -1161,51 +1312,23 @@ function CoachScreenContent() {
           />
 
           <View style={styles.headerContent}>
-            <View>
+            <Pressable
+              accessibilityHint="Long press to open settings."
+              accessibilityLabel="PeiPei header"
+              accessibilityRole="button"
+              delayLongPress={280}
+              onLongPress={() => {
+                setIsSidebarOpen(false);
+                router.push('/settings');
+              }}
+              style={({ pressed }) => [
+                styles.headerTitleButton,
+                pressed && styles.headerTitlePressed,
+              ]}
+            >
               <Text style={styles.headerEyebrow}>Coach</Text>
               <Text style={styles.headerTitle}>pei·pei</Text>
-            </View>
-
-            <View style={styles.headerActions}>
-              {!isTabletLayout ? (
-                <Pressable
-                  accessibilityHint="Opens the training summary panel."
-                  accessibilityLabel="Open training data"
-                  accessibilityRole="button"
-                  onPress={() => setIsSidebarOpen((current) => !current)}
-                  style={({ pressed }) => [
-                    styles.iconButton,
-                    pressed && styles.buttonPressed,
-                  ]}
-                >
-                  <Ionicons
-                    color={colors.coachLabel}
-                    name="stats-chart-outline"
-                    size={20}
-                  />
-                </Pressable>
-              ) : null}
-
-              <Pressable
-                accessibilityHint="Opens your profile, Garmin, billing, and account settings."
-                accessibilityLabel="Open settings"
-                accessibilityRole="button"
-                onPress={() => {
-                  setIsSidebarOpen(false);
-                  router.push('/settings');
-                }}
-                style={({ pressed }) => [
-                  styles.iconButton,
-                  pressed && styles.buttonPressed,
-                ]}
-              >
-                <Ionicons
-                  color={colors.coachLabel}
-                  name="settings-outline"
-                  size={20}
-                />
-              </Pressable>
-            </View>
+            </Pressable>
           </View>
         </View>
 
@@ -1234,45 +1357,103 @@ function CoachScreenContent() {
           />
         ) : (
           <>
-            <FlatList
-              ref={listRef}
-              contentContainerStyle={styles.listContent}
-              data={chatItems}
-              inverted
-              initialNumToRender={20}
-              keyboardDismissMode="interactive"
-              keyboardShouldPersistTaps="handled"
-              keyExtractor={(item) => item.id}
-              maintainVisibleContentPosition={{
-                autoscrollToTopThreshold: 10,
-                minIndexForVisible: 1,
+            <View
+              onLayout={(event) => {
+                setListViewportHeight(event.nativeEvent.layout.height);
               }}
-              maxToRenderPerBatch={10}
-              onEndReached={() => {
-                void loadOlderMessages();
-              }}
-              onEndReachedThreshold={0.3}
-              removeClippedSubviews
-              renderItem={renderChatItem}
-              showsVerticalScrollIndicator={false}
-              style={styles.list}
-              windowSize={10}
-              ListEmptyComponent={
-                <View style={styles.emptyState}>
-                  <Text style={styles.emptyTitle}>No coach messages yet</Text>
-                  <Text style={styles.emptyBody}>
-                    Start the conversation below and PeiPei will respond in real
-                    time.
-                  </Text>
-                </View>
-              }
-            />
+              style={styles.listShell}
+            >
+              <LinearGradient
+                colors={['rgba(15, 14, 12, 0.98)', 'rgba(15, 14, 12, 0)']}
+                pointerEvents="none"
+                style={styles.contentTopFade}
+              />
+
+              <FlatList
+                ref={listRef}
+                contentContainerStyle={styles.listContent}
+                data={chatItems}
+                inverted
+                initialNumToRender={20}
+                keyboardDismissMode="interactive"
+                keyboardShouldPersistTaps="handled"
+                keyExtractor={(item) => item.id}
+                maintainVisibleContentPosition={{
+                  autoscrollToTopThreshold: 10,
+                  minIndexForVisible: 1,
+                }}
+                maxToRenderPerBatch={10}
+                onEndReached={() => {
+                  void loadOlderMessages();
+                }}
+                onEndReachedThreshold={0.3}
+                onMomentumScrollBegin={revealScrollIndicator}
+                onMomentumScrollEnd={scheduleScrollIndicatorFade}
+                onScroll={Animated.event(
+                  [{ nativeEvent: { contentOffset: { y: scrollIndicatorY } } }],
+                  {
+                    listener: () => {
+                      revealScrollIndicator();
+                    },
+                    useNativeDriver: false,
+                  },
+                )}
+                onScrollBeginDrag={revealScrollIndicator}
+                onScrollEndDrag={scheduleScrollIndicatorFade}
+                onContentSizeChange={(_, height) => {
+                  setListContentHeight(height);
+                }}
+                removeClippedSubviews
+                renderItem={renderChatItem}
+                scrollEventThrottle={16}
+                showsVerticalScrollIndicator={false}
+                style={styles.list}
+                windowSize={10}
+                ListEmptyComponent={
+                  <View style={styles.emptyState}>
+                    <Text style={styles.emptyTitle}>No coach messages yet</Text>
+                    <Text style={styles.emptyBody}>
+                      Start the conversation below and PeiPei will respond in real
+                      time.
+                    </Text>
+                  </View>
+                }
+              />
+
+              <LinearGradient
+                colors={['rgba(15, 14, 12, 0)', 'rgba(15, 14, 12, 0.96)']}
+                pointerEvents="none"
+                style={styles.listEdgeGradient}
+              />
+
+              {scrollIndicatorHeight > 0 ? (
+                <Animated.View
+                  pointerEvents="none"
+                  style={[
+                    styles.scrollIndicator,
+                    {
+                      height: scrollIndicatorHeight,
+                      opacity: scrollIndicatorOpacity,
+                      transform: [
+                        {
+                          translateY: scrollIndicatorY.interpolate({
+                            extrapolate: 'clamp',
+                            inputRange: [0, scrollableDistance],
+                            outputRange: [0, scrollIndicatorTravel],
+                          }),
+                        },
+                      ],
+                    },
+                  ]}
+                />
+              ) : null}
+            </View>
 
             <View
               style={[
                 styles.composerContainer,
                 {
-                  paddingBottom: Math.max(insets.bottom, spacing.md),
+                  paddingBottom: insets.bottom + spacing.sm,
                 },
               ]}
             >
@@ -1314,13 +1495,13 @@ function CoachScreenContent() {
                   onPress={handleAttachmentPicker}
                   style={({ pressed }) => [
                     styles.attachButton,
-                    pressed && styles.buttonPressed,
+                    pressed && styles.iconControlPressed,
                   ]}
                 >
-                  <Ionicons
+                  <Feather
                     color={colors.muted}
-                    name="attach-outline"
-                    size={18}
+                    name="paperclip"
+                    size={16}
                   />
                 </Pressable>
 
@@ -1335,7 +1516,7 @@ function CoachScreenContent() {
                     setComposerValue(nextValue);
                   }}
                   onContentSizeChange={handleComposerContentSizeChange}
-                  placeholder="Message..."
+                  placeholder=""
                   placeholderTextColor={colors.muted}
                   returnKeyType="default"
                   style={[styles.input, { height: inputHeight }]}
@@ -1360,7 +1541,7 @@ function CoachScreenContent() {
                     {isStreaming ? (
                       <ActivityIndicator color={colors.text} size="small" />
                     ) : (
-                      <Ionicons color={colors.accent} name="arrow-up" size={18} />
+                      <Ionicons color={colors.accent} name="arrow-up" size={16} />
                     )}
                   </Pressable>
                 ) : (
@@ -1377,18 +1558,15 @@ function CoachScreenContent() {
                     }}
                     style={({ pressed }) => [
                       styles.micButton,
+                      pressed && styles.iconControlPressed,
                       (pressed || isRecording || isRecordingStarting) &&
                         styles.micButtonActive,
                     ]}
                   >
-                    <Ionicons
-                      color={
-                        isRecording || isRecordingStarting
-                          ? colors.text
-                          : colors.muted
-                      }
-                      name="mic-outline"
-                      size={18}
+                    <Feather
+                      color={colors.muted}
+                      name="mic"
+                      size={16}
                     />
                   </Pressable>
                 )}
@@ -1435,8 +1613,118 @@ const DayLabelRow = memo(function DayLabelRow({ label }: { label: string }) {
 
 const CoachIndicator = memo(function CoachIndicator() {
   return (
-    <View style={styles.coachIndicator}>
-      <Text style={styles.coachIndicatorText}>P</Text>
+    <LinearGradient
+      colors={['rgba(139, 58, 58, 0.2)', 'rgba(58, 58, 55, 0.12)']}
+      end={{ x: 1, y: 0.5 }}
+      start={{ x: 0, y: 0.5 }}
+      style={styles.coachIndicator}
+    />
+  );
+});
+
+const CoachMessageContent = memo(function CoachMessageContent({
+  content,
+  isClamped,
+  timestampLabel,
+}: {
+  content: string;
+  isClamped: boolean;
+  timestampLabel: string;
+}) {
+  const model = useMemo(() => getCoachContentModel(content), [content]);
+
+  if (isClamped || !model.useSemanticCards) {
+    return (
+      <View style={styles.messageTextContainer}>
+        {model.floatingHeadline ? (
+          <Text style={styles.coachFloatingHeadline}>
+            {createInlineRuns(
+              model.floatingHeadline,
+              styles.coachFloatingHeadline,
+              'coach-headline',
+            )}
+          </Text>
+        ) : null}
+
+        {model.previewText ? (
+          <Text numberOfLines={4} style={styles.coachMessageText}>
+            {renderMarkdown(model.previewText, 'coach')}
+          </Text>
+        ) : null}
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.messageTextContainer}>
+      {model.floatingHeadline ? (
+        <Text style={styles.coachFloatingHeadline}>
+          {createInlineRuns(
+            model.floatingHeadline,
+            styles.coachFloatingHeadline,
+            'coach-headline',
+          )}
+        </Text>
+      ) : null}
+
+      <View style={styles.coachCardStack}>
+        {model.cardParagraphs.map((paragraph, index) => {
+          const isFirstCard = index === 0;
+          const isLastCard = index === model.cardParagraphs.length - 1;
+
+          return (
+            <View
+              key={`coach-paragraph-${index}`}
+              style={[
+                styles.coachMiniCard,
+                isFirstCard && styles.coachMiniCardFirst,
+                !isLastCard && styles.coachMiniCardSpaced,
+              ]}
+            >
+              {isFirstCard ? (
+                <Text style={styles.cardTimestampText}>{timestampLabel}</Text>
+              ) : null}
+
+              <Text
+                style={[
+                  styles.coachMessageText,
+                  isFirstCard &&
+                    !model.floatingHeadline &&
+                    styles.coachLeadCardText,
+                ]}
+              >
+                {renderMarkdown(paragraph, 'coach')}
+              </Text>
+            </View>
+          );
+        })}
+      </View>
+
+      {model.closingLine ? (
+        <Text style={styles.coachPostscriptText}>
+          {renderMarkdown(model.closingLine, 'coach')}
+        </Text>
+      ) : null}
+    </View>
+  );
+});
+
+const CoachMonolithicContent = memo(function CoachMonolithicContent({
+  content,
+  isClamped,
+}: {
+  content: string;
+  isClamped: boolean;
+}) {
+  const maxLines = isClamped ? 4 : undefined;
+
+  return (
+    <View style={styles.messageTextContainer}>
+      <View style={styles.markdownBlock}>
+        <Text numberOfLines={maxLines} style={styles.coachMessageText}>
+          {renderMarkdown(content, 'coach')}
+        </Text>
+      </View>
     </View>
   );
 });
@@ -1454,19 +1742,20 @@ const MessageRow = memo(function MessageRow({
   onShareImage,
 }: MessageRowProps) {
   const translateX = useRef(new Animated.Value(0)).current;
-  const timestampOpacity = useRef(new Animated.Value(0)).current;
-  const timestampTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const replyTriggeredRef = useRef(false);
   const entryOpacity = useRef(new Animated.Value(0)).current;
-  const [isTimestampVisible, setIsTimestampVisible] = useState(false);
   const isUser = message.role === 'user';
   const messageBody = getMessageSummary(message);
+  const coachModel = useMemo(
+    () => (!isUser ? getCoachContentModel(message.content) : null),
+    [isUser, message.content],
+  );
   const isCollapsible =
     !isUser &&
     densityTier !== 'today' &&
     stripDisplayMarkup(messageBody).length > COLLAPSE_CHARACTER_THRESHOLD;
   const shouldClamp = isCollapsible && !isExpanded;
-  const maxLines = shouldClamp ? 4 : undefined;
+  const usesSemanticCards = Boolean(coachModel?.useSemanticCards) && !shouldClamp;
   const rowPanResponder = useMemo(
     () =>
       createReplyPanResponder({
@@ -1477,6 +1766,7 @@ const MessageRow = memo(function MessageRow({
       }),
     [message, onReply, translateX],
   );
+  const timestampLabel = formatMessageTimestamp(new Date(message.createdAt));
 
   useEffect(() => {
     Animated.timing(entryOpacity, {
@@ -1486,43 +1776,6 @@ const MessageRow = memo(function MessageRow({
       useNativeDriver: true,
     }).start();
   }, [entryOpacity, isPending]);
-
-  useEffect(() => {
-    return () => {
-      if (timestampTimeoutRef.current) {
-        clearTimeout(timestampTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  async function handleLongPress() {
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    setIsTimestampVisible(true);
-
-    if (timestampTimeoutRef.current) {
-      clearTimeout(timestampTimeoutRef.current);
-    }
-
-    Animated.timing(timestampOpacity, {
-      duration: 160,
-      easing: Easing.out(Easing.ease),
-      toValue: 1,
-      useNativeDriver: true,
-    }).start();
-
-    timestampTimeoutRef.current = setTimeout(() => {
-      Animated.timing(timestampOpacity, {
-        duration: 180,
-        easing: Easing.in(Easing.ease),
-        toValue: 0,
-        useNativeDriver: true,
-      }).start(({ finished }) => {
-        if (finished) {
-          setIsTimestampVisible(false);
-        }
-      });
-    }, 3000);
-  }
 
   return (
     <Animated.View
@@ -1536,9 +1789,9 @@ const MessageRow = memo(function MessageRow({
       ]}
       {...rowPanResponder.panHandlers}
     >
-      {!isUser ? (
+      {!isUser && isFirstInSequence ? (
         <View style={styles.coachSide}>
-          {isFirstInSequence ? <CoachIndicator /> : <View style={styles.indicatorSpacer} />}
+          <CoachIndicator />
         </View>
       ) : null}
 
@@ -1551,15 +1804,11 @@ const MessageRow = memo(function MessageRow({
         <Pressable
           accessibilityHint={
             shouldClamp
-              ? 'Double tap to expand the full message. Long press to show the timestamp.'
-              : 'Long press to show the timestamp.'
+              ? 'Double tap to expand the full message.'
+              : undefined
           }
           accessibilityLabel={`${isUser ? 'Your' : 'Coach'} message. ${messageBody}`}
           accessibilityRole="button"
-          delayLongPress={400}
-          onLongPress={() => {
-            void handleLongPress();
-          }}
           onPress={() => {
             if (shouldClamp) {
               onExpand(message.id);
@@ -1567,71 +1816,73 @@ const MessageRow = memo(function MessageRow({
           }}
           style={[
             styles.messageBubble,
-            isUser ? styles.runnerBubble : styles.coachBubble,
+            isUser
+              ? styles.runnerBubble
+              : usesSemanticCards
+                ? styles.semanticCoachBubble
+                : styles.coachBubble,
             message.messageType === 'social_post' && styles.socialBubble,
           ]}
         >
           {message.messageType === 'social_post' && message.socialPost ? (
-            <SocialPostCard
-              caption={message.socialPost.caption}
-              imageUrl={message.socialPost.imageUrl}
-              onCopyCaption={onCopyCaption}
-              onSaveImage={onSaveImage}
-              onShareImage={onShareImage}
-            />
+            <>
+              {!isPending ? (
+                <Text style={styles.bubbleTimestampText}>
+                  {timestampLabel}
+                </Text>
+              ) : null}
+
+              <SocialPostCard
+                caption={message.socialPost.caption}
+                imageUrl={message.socialPost.imageUrl}
+                onCopyCaption={onCopyCaption}
+                onSaveImage={onSaveImage}
+                onShareImage={onShareImage}
+              />
+            </>
           ) : (
             <View style={styles.messageTextContainer}>
-              <View style={styles.markdownBlock}>
-                <Text
-                  numberOfLines={maxLines}
-                  style={isUser ? styles.runnerMessageText : styles.coachMessageText}
-                >
-                  {renderMarkdown(message.content, isUser ? 'user' : 'coach')}
+              {!isPending && !usesSemanticCards ? (
+                <Text style={styles.bubbleTimestampText}>
+                  {timestampLabel}
                 </Text>
-              </View>
+              ) : null}
+
+              {isUser ? (
+                <View style={styles.markdownBlock}>
+                  <Text
+                    numberOfLines={shouldClamp ? 4 : undefined}
+                    style={styles.runnerMessageText}
+                  >
+                    {renderMarkdown(message.content, 'user')}
+                  </Text>
+                </View>
+              ) : usesSemanticCards ? (
+                <CoachMessageContent
+                  content={message.content}
+                  isClamped={shouldClamp}
+                  timestampLabel={timestampLabel}
+                />
+              ) : (
+                <CoachMonolithicContent
+                  content={message.content}
+                  isClamped={shouldClamp}
+                />
+              )}
 
               {shouldClamp ? (
-                <>
-                  <LinearGradient
-                    colors={[
-                      'rgba(15, 14, 12, 0)',
-                      isUser ? 'rgba(49, 27, 27, 0.92)' : 'rgba(26, 25, 23, 0.96)',
-                    ]}
-                    pointerEvents="none"
-                    style={styles.messageFade}
-                  />
-                  <Pressable
-                    accessibilityLabel="Expand coach message"
-                    accessibilityRole="button"
-                    onPress={() => {
-                      onExpand(message.id);
-                    }}
-                    style={({ pressed }) => [
-                      styles.expandHintButton,
-                      pressed && styles.buttonPressed,
-                    ]}
-                  >
-                    <Text style={styles.expandHintText}>... tap to read more</Text>
-                  </Pressable>
-                </>
+                <LinearGradient
+                  colors={[
+                    'rgba(15, 14, 12, 0)',
+                    isUser ? 'rgba(30, 28, 26, 0.85)' : 'rgba(15, 14, 12, 1)',
+                  ]}
+                  pointerEvents="none"
+                  style={styles.messageFade}
+                />
               ) : null}
             </View>
           )}
         </Pressable>
-
-        {!isPending && isTimestampVisible ? (
-          <Animated.View
-            style={[
-              styles.timestampContainer,
-              isUser ? styles.timestampRight : styles.timestampLeft,
-              { opacity: timestampOpacity },
-            ]}
-          >
-            <Text style={styles.timestampText}>
-              {formatTimestamp(new Date(message.createdAt))}
-            </Text>
-          </Animated.View>
-        ) : null}
       </View>
     </Animated.View>
   );
@@ -2068,6 +2319,14 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     flex: 1,
   },
+  topStatusFade: {
+    height: 40,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    zIndex: 10,
+  },
   tabletShell: {
     flexDirection: 'row',
   },
@@ -2083,9 +2342,11 @@ const styles = StyleSheet.create({
     width: 280,
   },
   header: {
+    borderBottomColor: 'rgba(58,58,55,0.3)',
+    borderBottomWidth: StyleSheet.hairlineWidth,
     overflow: 'hidden',
     paddingBottom: spacing.lg,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: 20,
     position: 'relative',
   },
   headerGradient: {
@@ -2093,9 +2354,15 @@ const styles = StyleSheet.create({
     bottom: -24,
   },
   headerContent: {
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
+  },
+  headerTitleButton: {
+    alignSelf: 'flex-start',
+  },
+  headerTitlePressed: {
+    opacity: 0.92,
   },
   headerEyebrow: {
     color: colors.coachLabel,
@@ -2109,35 +2376,39 @@ const styles = StyleSheet.create({
     fontFamily: fonts.brand,
     fontSize: 20,
     lineHeight: 24,
-    marginTop: spacing.xs,
-  },
-  headerActions: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  iconButton: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(26, 25, 23, 0.72)',
-    borderColor: colors.border,
-    borderRadius: radii.pill,
-    borderWidth: 1,
-    height: 36,
-    justifyContent: 'center',
-    width: 36,
+    marginTop: spacing.sm,
   },
   list: {
     flex: 1,
   },
+  listShell: {
+    flex: 1,
+    position: 'relative',
+  },
+  contentTopFade: {
+    height: 30,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+    top: 0,
+    zIndex: 10,
+  },
   listContent: {
     paddingBottom: spacing.lg,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: 20,
     paddingTop: spacing.md,
+  },
+  listEdgeGradient: {
+    bottom: 0,
+    height: 12,
+    left: 0,
+    position: 'absolute',
+    right: 0,
   },
   dayLabelRow: {
     alignItems: 'center',
-    marginBottom: 4,
-    marginTop: 12,
+    marginBottom: 0,
+    marginTop: 8,
   },
   dayLabelText: {
     color: colors.dim,
@@ -2150,33 +2421,22 @@ const styles = StyleSheet.create({
   messageRow: {
     alignItems: 'flex-start',
     flexDirection: 'row',
+    position: 'relative',
     width: '100%',
   },
   coachSide: {
     alignItems: 'center',
     justifyContent: 'flex-start',
-    marginRight: spacing.sm,
-    paddingTop: 2,
-    width: 24,
+    left: 4,
+    position: 'absolute',
+    top: 18,
+    width: 10,
+    zIndex: 2,
   },
   coachIndicator: {
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radii.pill,
-    borderWidth: 1,
-    height: 20,
-    justifyContent: 'center',
-    width: 20,
-  },
-  coachIndicatorText: {
-    color: colors.text,
-    fontFamily: fonts.coach,
-    fontSize: 10,
-    lineHeight: 10,
-  },
-  indicatorSpacer: {
-    width: 20,
+    borderRadius: 999,
+    height: 8,
+    width: 10,
   },
   messageBodyColumn: {
     flex: 1,
@@ -2188,37 +2448,43 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   messageBubble: {
-    borderRadius: radii.card,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
   coachBubble: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderWidth: 1,
-    maxWidth: '85%',
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderColor: 'rgba(58, 58, 55, 0.28)',
+    borderWidth: StyleSheet.hairlineWidth,
+    maxWidth: '88%',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
   },
   runnerBubble: {
-    backgroundColor: '#311B1B',
-    borderColor: colors.border,
-    borderWidth: 1,
-    maxWidth: '75%',
+    backgroundColor: '#1E1C1A',
+    borderBottomRightRadius: 4,
+    borderColor: 'rgba(58, 58, 55, 0.18)',
+    borderWidth: StyleSheet.hairlineWidth,
+    maxWidth: '72%',
   },
   socialBubble: {
     paddingHorizontal: spacing.sm,
     paddingVertical: spacing.sm,
   },
   coachMessageText: {
-    color: colors.text,
+    color: 'rgba(242,237,228,0.9)',
     fontFamily: fonts.coach,
     fontSize: 15,
-    lineHeight: 22,
+    lineHeight: 25,
   },
   runnerMessageText: {
-    color: colors.text,
+    color: '#FFFFFF',
     fontFamily: fonts.ui,
     fontSize: 15,
-    lineHeight: 22,
+    lineHeight: 25,
+    textAlign: 'right',
   },
   messageTextContainer: {
     position: 'relative',
@@ -2226,52 +2492,99 @@ const styles = StyleSheet.create({
   markdownBlock: {
     gap: 0,
   },
-  markdownParagraphSpacing: {
-    marginTop: spacing.sm,
+  semanticCoachBubble: {
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    maxWidth: '88%',
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    shadowOpacity: 0,
+  },
+  coachFloatingHeadline: {
+    color: colors.text,
+    fontFamily: fonts.coach,
+    fontSize: 17,
+    fontWeight: '600',
+    lineHeight: 25,
+    marginBottom: 12,
+  },
+  coachCardStack: {
+    alignSelf: 'stretch',
+  },
+  coachMiniCard: {
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  coachMiniCardFirst: {
+    borderLeftColor: 'rgba(139,58,58,0.25)',
+    borderLeftWidth: 2,
+    paddingRight: 52,
+  },
+  coachMiniCardSpaced: {
+    marginBottom: 6,
+  },
+  cardTimestampText: {
+    color: 'rgba(255,255,255,0.15)',
+    fontFamily: fonts.ui,
+    fontSize: 10,
+    lineHeight: 12,
+    position: 'absolute',
+    right: 12,
+    top: 10,
+  },
+  coachLeadCardText: {
+    color: colors.text,
+    fontSize: 17,
+    fontWeight: '600',
+    lineHeight: 26,
+  },
+  coachPostscriptText: {
+    color: 'rgba(242,237,228,0.6)',
+    fontFamily: fonts.coach,
+    fontSize: 14,
+    fontStyle: 'italic',
+    lineHeight: 22,
+    marginTop: 12,
+  },
+  markdownClosingGap: {
+    lineHeight: 8,
   },
   inlineStrong: {
     fontWeight: '600',
   },
+  inlineEmphasis: {
+    fontStyle: 'italic',
+  },
+  inlineStrongText: {
+    color: '#FFFFFF',
+  },
   dataReferenceText: {
-    backgroundColor: colors.dataHighlight,
-    borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 10,
     color: colors.text,
     fontFamily: fonts.mono,
-    fontSize: 13,
-    lineHeight: 22,
+    fontSize: 15,
+    lineHeight: 25,
     overflow: 'hidden',
-    paddingHorizontal: 4,
+    paddingHorizontal: 6,
     paddingVertical: 1,
   },
   messageFade: {
     bottom: 0,
-    height: 48,
+    height: 20,
     left: 0,
     position: 'absolute',
     right: 0,
   },
-  expandHintButton: {
-    marginTop: spacing.sm,
-  },
-  expandHintText: {
-    color: colors.muted,
-    fontFamily: fonts.ui,
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  timestampContainer: {
-    marginTop: spacing.xs,
-  },
-  timestampLeft: {
-    alignSelf: 'flex-start',
-  },
-  timestampRight: {
+  bubbleTimestampText: {
     alignSelf: 'flex-end',
-  },
-  timestampText: {
-    color: colors.dim,
+    color: 'rgba(255,255,255,0.2)',
     fontFamily: fonts.ui,
-    fontSize: 12,
+    fontSize: 10,
+    lineHeight: 12,
+    marginBottom: 6,
   },
   typingBubble: {
     minHeight: 52,
@@ -2330,7 +2643,7 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontFamily: fonts.coach,
     fontSize: 15,
-    lineHeight: 22,
+    lineHeight: 25,
     paddingHorizontal: spacing.sm,
   },
   socialActions: {
@@ -2359,9 +2672,9 @@ const styles = StyleSheet.create({
   composerContainer: {
     backgroundColor: colors.background,
     borderTopColor: colors.border,
-    borderTopWidth: 1,
+    borderTopWidth: StyleSheet.hairlineWidth,
     gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: 20,
     paddingTop: spacing.md,
   },
   replyBar: {
@@ -2482,59 +2795,62 @@ const styles = StyleSheet.create({
   },
   inputBar: {
     alignItems: 'flex-end',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: 22,
-    borderWidth: 1,
+    backgroundColor: colors.background,
     flexDirection: 'row',
-    gap: spacing.sm,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    gap: 10,
+    paddingHorizontal: 0,
+    paddingVertical: 2,
   },
   attachButton: {
     alignItems: 'center',
-    borderRadius: radii.pill,
-    height: 36,
+    height: 28,
     justifyContent: 'center',
-    width: 36,
+    opacity: 0.4,
+    width: 24,
   },
   input: {
-    backgroundColor: colors.background,
-    borderRadius: 20,
+    backgroundColor: 'transparent',
+    borderRadius: 0,
     color: colors.text,
     flex: 1,
     fontSize: 15,
-    lineHeight: 22,
+    lineHeight: 25,
     maxHeight: INPUT_MAX_HEIGHT,
     minHeight: INPUT_MIN_HEIGHT,
-    paddingHorizontal: 8,
-    paddingTop: 6,
+    paddingHorizontal: 0,
+    paddingTop: 4,
   },
   sendButton: {
     alignItems: 'center',
     alignSelf: 'flex-end',
-    backgroundColor: colors.background,
-    borderColor: colors.border,
-    borderRadius: radii.pill,
-    borderWidth: 1,
-    height: 36,
+    height: 28,
     justifyContent: 'center',
-    width: 36,
+    width: 24,
   },
   micButton: {
     alignItems: 'center',
     alignSelf: 'flex-end',
-    backgroundColor: colors.background,
-    borderColor: colors.border,
-    borderRadius: radii.pill,
-    borderWidth: 1,
-    height: 36,
+    height: 28,
     justifyContent: 'center',
-    width: 36,
+    opacity: 0.4,
+    width: 24,
   },
   micButtonActive: {
-    backgroundColor: colors.accent,
-    borderColor: colors.accent,
+    opacity: 1,
+  },
+  iconControlPressed: {
+    opacity: 0.8,
+  },
+  sendButtonPressed: {
+    opacity: 0.9,
+  },
+  scrollIndicator: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderRadius: radii.pill,
+    position: 'absolute',
+    right: 4,
+    top: 0,
+    width: 2,
   },
   buttonPressed: {
     opacity: 0.86,

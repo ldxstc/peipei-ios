@@ -531,7 +531,7 @@ function OptionSelector<T extends string>({
 }) {
   return (
     <View style={styles.selectorRow}>
-      {options.map((option) => {
+      {(options ?? []).map((option) => {
         const selected = option.value === value;
 
         return (
