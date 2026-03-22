@@ -219,7 +219,7 @@ function getDensityTier(createdAt: Date, now: Date): DensityTier {
 }
 
 function getSequenceSpacing(tier: DensityTier, isFirstInSequence: boolean) {
-  return isFirstInSequence ? 16 : 6;
+  return isFirstInSequence ? 16 : 4;
 }
 
 function formatDayLabel(date: Date) {
@@ -357,11 +357,6 @@ function renderMarkdown(
       .map((line) => line.trim())
       .join('\n')}`;
     const segments = createInlineRuns(content, baseStyle, `paragraph-${index}`);
-    const shouldAddClosingBreath =
-      tone === 'coach' &&
-      index === paragraphs.length - 1 &&
-      index > 0 &&
-      content.length < 20;
 
     if (index === 0) {
       return segments;
@@ -371,13 +366,6 @@ function renderMarkdown(
       <Text key={`markdown-break-${index}`} style={baseStyle}>
         {'\n\n'}
       </Text>,
-      ...(shouldAddClosingBreath
-        ? [
-            <Text key={`markdown-closing-gap-${index}`} style={styles.markdownClosingGap}>
-              {'\n'}
-            </Text>,
-          ]
-        : []),
       ...segments,
     ];
   });
@@ -1614,7 +1602,7 @@ const DayLabelRow = memo(function DayLabelRow({ label }: { label: string }) {
 const CoachIndicator = memo(function CoachIndicator() {
   return (
     <LinearGradient
-      colors={['rgba(139, 58, 58, 0.2)', 'rgba(58, 58, 55, 0.12)']}
+      colors={['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.02)']}
       end={{ x: 1, y: 0.5 }}
       start={{ x: 0, y: 0.5 }}
       style={styles.coachIndicator}
@@ -1712,17 +1700,43 @@ const CoachMessageContent = memo(function CoachMessageContent({
 const CoachMonolithicContent = memo(function CoachMonolithicContent({
   content,
   isClamped,
+  onTextLayout,
 }: {
   content: string;
   isClamped: boolean;
+  onTextLayout?: (lineCount: number) => void;
 }) {
-  const maxLines = isClamped ? 4 : undefined;
+  const maxLines = isClamped ? 6 : undefined;
+  const cleaned = stripDisplayMarkup(content);
+  const firstLineBreakIndex = cleaned.indexOf('\n');
+  const leadLine =
+    firstLineBreakIndex >= 0 ? cleaned.slice(0, firstLineBreakIndex) : cleaned;
+  const remainder =
+    firstLineBreakIndex >= 0 ? cleaned.slice(firstLineBreakIndex + 1).trim() : '';
 
   return (
     <View style={styles.messageTextContainer}>
       <View style={styles.markdownBlock}>
-        <Text numberOfLines={maxLines} style={styles.coachMessageText}>
-          {renderMarkdown(content, 'coach')}
+        <Text
+          numberOfLines={maxLines}
+          onTextLayout={
+            !isClamped && onTextLayout
+              ? (event) => {
+                  onTextLayout(event.nativeEvent.lines.length);
+                }
+              : undefined
+          }
+          style={styles.coachMessageText}
+        >
+          <Text style={styles.coachFirstLineText}>
+            {createInlineRuns(leadLine, styles.coachFirstLineText, 'coach-first-line')}
+          </Text>
+          {remainder ? (
+            <Text style={styles.coachMessageText}>
+              {'\n'}
+              {renderMarkdown(remainder, 'coach')}
+            </Text>
+          ) : null}
         </Text>
       </View>
     </View>
@@ -1744,18 +1758,15 @@ const MessageRow = memo(function MessageRow({
   const translateX = useRef(new Animated.Value(0)).current;
   const replyTriggeredRef = useRef(false);
   const entryOpacity = useRef(new Animated.Value(0)).current;
+  const [measuredLineCount, setMeasuredLineCount] = useState(0);
   const isUser = message.role === 'user';
   const messageBody = getMessageSummary(message);
-  const coachModel = useMemo(
-    () => (!isUser ? getCoachContentModel(message.content) : null),
-    [isUser, message.content],
-  );
+  const estimatedOverflow = stripDisplayMarkup(messageBody).length > 320;
   const isCollapsible =
     !isUser &&
     densityTier !== 'today' &&
-    stripDisplayMarkup(messageBody).length > COLLAPSE_CHARACTER_THRESHOLD;
+    (measuredLineCount > 8 || (!measuredLineCount && estimatedOverflow));
   const shouldClamp = isCollapsible && !isExpanded;
-  const usesSemanticCards = Boolean(coachModel?.useSemanticCards) && !shouldClamp;
   const rowPanResponder = useMemo(
     () =>
       createReplyPanResponder({
@@ -1816,22 +1827,12 @@ const MessageRow = memo(function MessageRow({
           }}
           style={[
             styles.messageBubble,
-            isUser
-              ? styles.runnerBubble
-              : usesSemanticCards
-                ? styles.semanticCoachBubble
-                : styles.coachBubble,
+            isUser ? styles.runnerBubble : styles.coachBubble,
             message.messageType === 'social_post' && styles.socialBubble,
           ]}
         >
           {message.messageType === 'social_post' && message.socialPost ? (
             <>
-              {!isPending ? (
-                <Text style={styles.bubbleTimestampText}>
-                  {timestampLabel}
-                </Text>
-              ) : null}
-
               <SocialPostCard
                 caption={message.socialPost.caption}
                 imageUrl={message.socialPost.imageUrl}
@@ -1839,42 +1840,47 @@ const MessageRow = memo(function MessageRow({
                 onSaveImage={onSaveImage}
                 onShareImage={onShareImage}
               />
-            </>
-          ) : (
-            <View style={styles.messageTextContainer}>
-              {!isPending && !usesSemanticCards ? (
+
+              {!isPending ? (
                 <Text style={styles.bubbleTimestampText}>
                   {timestampLabel}
                 </Text>
               ) : null}
-
+            </>
+          ) : (
+            <View style={styles.messageTextContainer}>
               {isUser ? (
                 <View style={styles.markdownBlock}>
                   <Text
-                    numberOfLines={shouldClamp ? 4 : undefined}
+                    numberOfLines={shouldClamp ? 6 : undefined}
                     style={styles.runnerMessageText}
                   >
                     {renderMarkdown(message.content, 'user')}
                   </Text>
                 </View>
-              ) : usesSemanticCards ? (
-                <CoachMessageContent
-                  content={message.content}
-                  isClamped={shouldClamp}
-                  timestampLabel={timestampLabel}
-                />
               ) : (
                 <CoachMonolithicContent
                   content={message.content}
                   isClamped={shouldClamp}
+                  onTextLayout={(lineCount) => {
+                    setMeasuredLineCount((current) =>
+                      current === lineCount ? current : lineCount,
+                    );
+                  }}
                 />
               )}
+
+              {!isPending ? (
+                <Text style={styles.bubbleTimestampText}>
+                  {timestampLabel}
+                </Text>
+              ) : null}
 
               {shouldClamp ? (
                 <LinearGradient
                   colors={[
                     'rgba(15, 14, 12, 0)',
-                    isUser ? 'rgba(30, 28, 26, 0.85)' : 'rgba(15, 14, 12, 1)',
+                    'rgba(15, 14, 12, 0.92)',
                   ]}
                   pointerEvents="none"
                   style={styles.messageFade}
@@ -2396,7 +2402,7 @@ const styles = StyleSheet.create({
   listContent: {
     paddingBottom: spacing.lg,
     paddingHorizontal: 20,
-    paddingTop: spacing.md,
+    paddingTop: 8,
   },
   listEdgeGradient: {
     bottom: 0,
@@ -2407,8 +2413,8 @@ const styles = StyleSheet.create({
   },
   dayLabelRow: {
     alignItems: 'center',
-    marginBottom: 0,
-    marginTop: 8,
+    marginBottom: 8,
+    marginTop: 24,
   },
   dayLabelText: {
     color: colors.dim,
@@ -2448,25 +2454,18 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   messageBubble: {
-    borderRadius: 20,
+    borderRadius: 16,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 14,
   },
   coachBubble: {
     backgroundColor: 'rgba(255,255,255,0.04)',
-    borderColor: 'rgba(58, 58, 55, 0.28)',
-    borderWidth: StyleSheet.hairlineWidth,
     maxWidth: '88%',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
   },
   runnerBubble: {
-    backgroundColor: '#1E1C1A',
-    borderBottomRightRadius: 4,
-    borderColor: 'rgba(58, 58, 55, 0.18)',
-    borderWidth: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(255,255,255,0.02)',
+    borderBottomRightRadius: 6,
+    borderRadius: 16,
     maxWidth: '72%',
   },
   socialBubble: {
@@ -2474,9 +2473,16 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
   },
   coachMessageText: {
-    color: 'rgba(242,237,228,0.9)',
+    color: colors.text,
     fontFamily: fonts.coach,
     fontSize: 15,
+    lineHeight: 25,
+  },
+  coachFirstLineText: {
+    color: colors.text,
+    fontFamily: fonts.coach,
+    fontSize: 15,
+    fontWeight: '500',
     lineHeight: 25,
   },
   runnerMessageText: {
@@ -2558,33 +2564,32 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   inlineStrongText: {
-    color: '#FFFFFF',
+    color: colors.text,
   },
   dataReferenceText: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 10,
+    backgroundColor: 'transparent',
+    borderRadius: 0,
     color: colors.text,
     fontFamily: fonts.mono,
     fontSize: 15,
     lineHeight: 25,
-    overflow: 'hidden',
-    paddingHorizontal: 6,
-    paddingVertical: 1,
+    paddingHorizontal: 0,
+    paddingVertical: 0,
   },
   messageFade: {
     bottom: 0,
-    height: 20,
+    height: 50,
     left: 0,
     position: 'absolute',
     right: 0,
   },
   bubbleTimestampText: {
     alignSelf: 'flex-end',
-    color: 'rgba(255,255,255,0.2)',
+    color: 'rgba(242,237,228,0.25)',
     fontFamily: fonts.ui,
     fontSize: 10,
     lineHeight: 12,
-    marginBottom: 6,
+    paddingTop: 6,
   },
   typingBubble: {
     minHeight: 52,
