@@ -2414,7 +2414,7 @@ const styles = StyleSheet.create({
   dayLabelRow: {
     alignItems: 'center',
     marginBottom: 8,
-    marginTop: 20,
+    marginTop: 24,
   },
   dayLabelText: {
     color: colors.dim,
@@ -2463,12 +2463,10 @@ const styles = StyleSheet.create({
     maxWidth: '88%',
   },
   runnerBubble: {
-    backgroundColor: 'transparent',
-    borderRadius: 0,
-    borderWidth: 0,
+    backgroundColor: 'rgba(255,255,255,0.02)',
+    borderBottomRightRadius: 6,
+    borderRadius: 16,
     maxWidth: '72%',
-    paddingHorizontal: 0,
-    paddingVertical: 0,
   },
   socialBubble: {
     paddingHorizontal: spacing.sm,
@@ -2488,7 +2486,7 @@ const styles = StyleSheet.create({
     lineHeight: 25,
   },
   runnerMessageText: {
-    color: 'rgba(242,237,228,0.7)',
+    color: '#FFFFFF',
     fontFamily: fonts.ui,
     fontSize: 15,
     lineHeight: 25,
@@ -2587,7 +2585,7 @@ const styles = StyleSheet.create({
   },
   bubbleTimestampText: {
     alignSelf: 'flex-end',
-    color: 'rgba(242,237,228,0.2)',
+    color: 'rgba(242,237,228,0.25)',
     fontFamily: fonts.ui,
     fontSize: 10,
     lineHeight: 12,
