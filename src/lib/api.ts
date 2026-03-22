@@ -190,7 +190,7 @@ function coerceText(value: unknown) {
   }
 
   if (Array.isArray(value)) {
-    return value
+    return (value ?? [])
       .map((item) => {
         if (typeof item === 'string') {
           return item;
@@ -211,6 +211,15 @@ function coerceText(value: unknown) {
   }
 
   return '';
+}
+
+function stripToolCallMarkup(value: string) {
+  return value
+    .replace(/<tool_calls>[\s\S]*?<\/tool_calls>/gi, '')
+    .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
+    .replace(/<\/?tool_calls\s*\/?>/gi, '')
+    .replace(/<\/?tool_call\s*\/?>/gi, '')
+    .trim();
 }
 
 function coerceBoolean(value: unknown) {
@@ -249,14 +258,16 @@ function normalizeMessage(value: unknown): CoachMessage {
   const socialPost = isSocialPost
     ? {
         caption:
-          stringifyValue(
-            firstPresentValue(contentRecord ?? topLevelRecord, [
-              'caption',
-              'text',
-              'content',
-              'message',
-            ]),
-          ) || coerceText(message.content),
+          stripToolCallMarkup(
+            stringifyValue(
+              firstPresentValue(contentRecord ?? topLevelRecord, [
+                'caption',
+                'text',
+                'content',
+                'message',
+              ]),
+            ) || coerceText(message.content),
+          ),
         imageUrl: stringifyValue(
           firstPresentValue(contentRecord ?? topLevelRecord, [
             'imageUrl',
@@ -274,7 +285,7 @@ function normalizeMessage(value: unknown): CoachMessage {
         ? message.id
         : createLocalId(normalizeRole(message.role)),
     role: normalizeRole(message.role),
-    content: socialPost?.caption || coerceText(message.content),
+    content: socialPost?.caption || stripToolCallMarkup(coerceText(message.content)),
     createdAt:
       typeof message.createdAt === 'string'
         ? message.createdAt
@@ -296,7 +307,10 @@ function safeJsonParse<T>(value: string) {
 
 async function readResponsePayload(response: Response) {
   const text = await response.text();
-  const json = text ? safeJsonParse<JsonValue>(text) : null;
+  const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+  const isJsonResponse =
+    contentType.includes('application/json') || contentType.includes('+json');
+  const json = text && isJsonResponse ? safeJsonParse<JsonValue>(text) : null;
 
   return { text, json };
 }
@@ -373,8 +387,8 @@ function applySessionAuthHeaders(
     headers.set('Cookie', buildSessionCookieHeader(normalizedToken));
   }
 
-  if (!headers.has('X-Better-Auth-Token')) {
-    headers.set('X-Better-Auth-Token', normalizedToken);
+  if (!headers.has('X-Session-Token')) {
+    headers.set('X-Session-Token', normalizedToken);
   }
 }
 
@@ -500,6 +514,14 @@ async function requestJson<T>(
   const payload = await readResponsePayload(response);
 
   if (!response.ok) {
+    const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+    const isJsonResponse =
+      contentType.includes('application/json') || contentType.includes('+json');
+
+    if (!isJsonResponse) {
+      return {} as T;
+    }
+
     throw new ApiError(
       buildMessageFromPayload(payload.json, payload.text || 'Request failed.'),
       response.status,
@@ -581,11 +603,27 @@ export async function signUpWithEmail(
 }
 
 export async function getSession(sessionToken: string) {
-  return requestJson<SessionResponse>(
-    '/api/auth/get-session',
-    { method: 'GET' },
-    sessionToken,
-  );
+  const headers = new Headers({
+    Accept: 'application/json',
+  });
+  applyTrustedOriginHeaders(headers);
+  headers.set('X-Session-Token', normalizeSessionToken(sessionToken) ?? '');
+
+  const response = await fetch(`${API_BASE_URL}/api/auth/mobile-session`, {
+    method: 'GET',
+    headers,
+  });
+
+  const payload = await readResponsePayload(response);
+
+  if (!response.ok) {
+    throw new ApiError(
+      buildMessageFromPayload(payload.json, payload.text || 'Request failed.'),
+      response.status,
+    );
+  }
+
+  return (payload.json as SessionResponse) ?? { user: null };
 }
 
 export async function getCoachChat(sessionToken: string) {
@@ -595,10 +633,10 @@ export async function getCoachChat(sessionToken: string) {
   }>('/api/coach/chat', { method: 'GET' }, sessionToken);
 
   return {
-    messages: Array.isArray(payload.messages)
-      ? payload.messages.map(normalizeMessage)
+    messages: Array.isArray(payload?.messages)
+      ? (payload.messages ?? []).map(normalizeMessage)
       : [],
-    hasMore: Boolean(payload.hasMore),
+    hasMore: Boolean(payload?.hasMore),
   } satisfies CoachChatResponse;
 }
 
@@ -652,10 +690,6 @@ export async function openCoachChatStream(
       buildMessageFromPayload(payload.json, payload.text || 'Unable to stream chat.'),
       response.status,
     );
-  }
-
-  if (!response.body) {
-    throw new ApiError('Streaming is not available in this runtime.', 500);
   }
 
   return response;
@@ -793,104 +827,125 @@ export async function disconnectGarmin(sessionToken: string) {
 }
 
 export async function getCoachSidebar(sessionToken: string) {
-  const payload = await requestJson<unknown>(
-    '/api/coach/sidebar',
-    { method: 'GET' },
-    sessionToken,
-  );
+  try {
+    const payload = await requestJson<unknown>(
+      '/api/coach/sidebar',
+      { method: 'GET' },
+      sessionToken,
+    );
 
-  const recentRunsSource =
-    firstPresentValue(payload, [
-      'recentRuns',
-      'runs.recent',
-      'runs',
-      'recent',
-    ]) ?? [];
-  const recentRuns = Array.isArray(recentRunsSource)
-    ? recentRunsSource.slice(0, 5).map(normalizeRecentRun)
-    : [];
+    const recentRunsSource =
+      firstPresentValue(payload, [
+        'recentRuns',
+        'runs.recent',
+        'runs',
+        'recent',
+      ]) ?? [];
+    const recentRuns = Array.isArray(recentRunsSource)
+      ? (recentRunsSource ?? []).slice(0, 5).map(normalizeRecentRun)
+      : [];
 
-  return {
-    goalProgress: {
-      countdown:
-        stringifyValue(
-          firstPresentValue(payload, [
-            'goalProgress.countdown',
-            'goal.countdown',
-            'race.countdown',
-            'race.daysToRace',
-          ]),
-        ) || 'No race set',
-      detail:
-        stringifyValue(
-          firstPresentValue(payload, [
-            'goalProgress.detail',
-            'goal.detail',
-            'race.detail',
-            'race.date',
-          ]),
-        ) || 'Set a race goal in the web app',
-      title:
-        stringifyValue(
-          firstPresentValue(payload, [
-            'goalProgress.title',
-            'goal.title',
-            'race.name',
-            'race.title',
-          ]),
-        ) || 'Goal Progress',
-    },
-    raw: payload,
-    recentRuns,
-    thisWeek: {
-      avgPace:
-        stringifyValue(
-          firstPresentValue(payload, [
-            'thisWeek.avgPace',
-            'week.avgPace',
-            'stats.avgPace',
-          ]),
-        ) || '--',
-      km:
-        stringifyValue(
-          firstPresentValue(payload, [
-            'thisWeek.km',
-            'week.km',
-            'stats.km',
-            'thisWeek.distance',
-          ]),
-        ) || '0',
-      runs:
-        stringifyValue(
-          firstPresentValue(payload, [
-            'thisWeek.runs',
-            'week.runs',
-            'stats.runs',
-          ]),
-        ) || '0',
-    },
-    todayPlan: {
-      distance:
-        stringifyValue(
-          firstPresentValue(payload, [
-            'todayPlan.distance',
-            'todayWorkout.distance',
-            'workoutToday.distance',
-            'plan.today.distance',
-          ]),
-        ) || '--',
-      title:
-        stringifyValue(
-          firstPresentValue(payload, [
-            'todayPlan.title',
-            'todayPlan.type',
-            'todayWorkout.title',
-            'todayWorkout.type',
-            'workoutToday.title',
-          ]),
-        ) || 'Check today\'s plan',
-    },
-  } satisfies CoachSidebarData;
+    return {
+      goalProgress: {
+        countdown:
+          stringifyValue(
+            firstPresentValue(payload, [
+              'goalProgress.countdown',
+              'goal.countdown',
+              'race.countdown',
+              'race.daysToRace',
+            ]),
+          ) || 'No race set',
+        detail:
+          stringifyValue(
+            firstPresentValue(payload, [
+              'goalProgress.detail',
+              'goal.detail',
+              'race.detail',
+              'race.date',
+            ]),
+          ) || 'Set a race goal in the web app',
+        title:
+          stringifyValue(
+            firstPresentValue(payload, [
+              'goalProgress.title',
+              'goal.title',
+              'race.name',
+              'race.title',
+            ]),
+          ) || 'Goal Progress',
+      },
+      raw: payload,
+      recentRuns,
+      thisWeek: {
+        avgPace:
+          stringifyValue(
+            firstPresentValue(payload, [
+              'thisWeek.avgPace',
+              'week.avgPace',
+              'stats.avgPace',
+            ]),
+          ) || '--',
+        km:
+          stringifyValue(
+            firstPresentValue(payload, [
+              'thisWeek.km',
+              'week.km',
+              'stats.km',
+              'thisWeek.distance',
+            ]),
+          ) || '0',
+        runs:
+          stringifyValue(
+            firstPresentValue(payload, [
+              'thisWeek.runs',
+              'week.runs',
+              'stats.runs',
+            ]),
+          ) || '0',
+      },
+      todayPlan: {
+        distance:
+          stringifyValue(
+            firstPresentValue(payload, [
+              'todayPlan.distance',
+              'todayWorkout.distance',
+              'workoutToday.distance',
+              'plan.today.distance',
+            ]),
+          ) || '--',
+        title:
+          stringifyValue(
+            firstPresentValue(payload, [
+              'todayPlan.title',
+              'todayPlan.type',
+              'todayWorkout.title',
+              'todayWorkout.type',
+              'workoutToday.title',
+            ]),
+          ) || 'Check today\'s plan',
+      },
+    } satisfies CoachSidebarData;
+  } catch {
+    return {
+      goalProgress: {
+        countdown: 'No race set',
+        detail: 'Set a race goal in the web app',
+        title: 'Goal Progress',
+      },
+      raw: null,
+      recentRuns: [],
+      thisWeek: {
+        avgPace: '--',
+        km: '0',
+        runs: '0',
+      },
+      todayPlan: {
+        distance: '--',
+        title: "Check today's plan",
+      },
+    } satisfies CoachSidebarData;
+  }
 }
 
 export async function registerPushToken(
@@ -915,14 +970,6 @@ export async function registerPushToken(
   });
 
   if (!response.ok) {
-    const payload = await readResponsePayload(response);
-    console.log('[push-token placeholder]', {
-      message: payload.text,
-      platform,
-      status: response.status,
-      token,
-    });
-
     return {
       registered: false,
     } satisfies PushRegistrationResult;
@@ -987,7 +1034,9 @@ export function extractTextChunk(payload: unknown): string {
 
   for (const key of ['content', 'parts', 'chunks']) {
     if (Array.isArray(candidate[key])) {
-      return candidate[key].map((item) => extractTextChunk(item)).join('');
+      return ((candidate[key] as unknown[]) ?? [])
+        .map((item) => extractTextChunk(item))
+        .join('');
     }
   }
 
@@ -998,53 +1047,43 @@ export async function consumeTextStream(
   response: Response,
   onTextChunk: (chunk: string) => void | Promise<void>,
 ) {
-  const reader = response.body?.getReader();
+  const text = await response.text();
+  const lines = text.split(/\r?\n/);
 
-  if (!reader) {
-    throw new ApiError('Streaming is not available in this runtime.', 500);
-  }
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
 
-  const decoder = new TextDecoder();
-  let buffer = '';
+    if (!line || line === '[DONE]' || line === 'data: [DONE]') {
+      continue;
+    }
 
-  while (true) {
-    const { done, value } = await reader.read();
-    buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
-
-    const lines = buffer.split(/\r?\n/);
-    buffer = lines.pop() ?? '';
-
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-
-      if (!line.startsWith('data:')) {
-        continue;
-      }
-
+    if (line.startsWith('data:')) {
       const data = line.slice(5).trim();
-
-      if (!data || data === '[DONE]') {
-        continue;
-      }
-
       const parsed = safeJsonParse<unknown>(data);
       const chunk = extractTextChunk(parsed ?? data);
 
       if (chunk) {
         await onTextChunk(chunk);
       }
+
+      continue;
     }
 
-    if (done) {
-      break;
+    const match = line.match(/^(\d+):(.*)$/);
+    if (!match) {
+      continue;
     }
-  }
 
-  const finalLine = buffer.trim();
-  if (finalLine.startsWith('data:')) {
-    const data = finalLine.slice(5).trim();
-    const parsed = safeJsonParse<unknown>(data);
-    const chunk = extractTextChunk(parsed ?? data);
+    const [, type, data] = match;
+    if (type !== '0') {
+      continue;
+    }
+
+    const parsed = safeJsonParse<unknown>(data.trim());
+    const chunk =
+      typeof parsed === 'string'
+        ? parsed
+        : extractTextChunk(parsed ?? data.trim());
 
     if (chunk) {
       await onTextChunk(chunk);

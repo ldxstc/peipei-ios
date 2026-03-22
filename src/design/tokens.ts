@@ -1,14 +1,17 @@
 export const colors = {
   background: '#0F0E0C',
   surface: '#1A1917',
-  border: '#3A3A37',
+  border: 'rgba(58, 58, 55, 0.4)',
   text: '#F2EDE4',
   muted: '#6B6B66',
   dim: '#3A3A37',
   accent: '#8B3A3A',
+  coachLabel: '#6B6B66',
+  dataHighlight: '#1A1917',
 } as const;
 
 export const fonts = {
+  brand: 'Jura_300Light',
   coach: 'LibreBaskerville_400Regular',
   ui: 'System',
   mono: 'Menlo',

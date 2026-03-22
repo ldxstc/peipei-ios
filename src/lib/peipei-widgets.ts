@@ -51,7 +51,6 @@ function loadWidgetModules() {
     };
   } catch (error) {
     if (!widgetsUnavailableLogged) {
-      console.log('[widgets unavailable in current runtime]', error);
       widgetsUnavailableLogged = true;
     }
 
@@ -87,10 +86,14 @@ export async function syncPeiPeiWidgets(snapshot: WidgetSnapshot) {
     }
 
     await Promise.all(
-      liveActivities.map((activity) => activity.update(liveActivityProps)),
+      (liveActivities ?? []).map((activity) =>
+        activity.update(liveActivityProps),
+      ),
     );
     return;
   }
 
-  await Promise.all(liveActivities.map((activity) => activity.end('default')));
+  await Promise.all(
+    (liveActivities ?? []).map((activity) => activity.end('default')),
+  );
 }

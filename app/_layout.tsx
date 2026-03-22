@@ -1,7 +1,8 @@
+import { Jura_300Light } from '@expo-google-fonts/jura';
 import { LibreBaskerville_400Regular } from '@expo-google-fonts/libre-baskerville';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useFonts } from 'expo-font';
-import { Stack, useRouter, useSegments } from 'expo-router';
+import { Stack, useRootNavigationState, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
@@ -29,6 +30,7 @@ const queryClient = new QueryClient({
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
+    Jura_300Light,
     LibreBaskerville_400Regular,
   });
 
@@ -46,6 +48,7 @@ export default function RootLayout() {
 }
 
 function RootNavigator({ fontsLoaded }: { fontsLoaded: boolean }) {
+  const navigationState = useRootNavigationState();
   const router = useRouter();
   const segments = useSegments();
   const { onboardingStatus, status } = useAuth();
@@ -53,6 +56,7 @@ function RootNavigator({ fontsLoaded }: { fontsLoaded: boolean }) {
   useEffect(() => {
     if (
       !fontsLoaded ||
+      !navigationState?.key ||
       status === 'loading' ||
       onboardingStatus === 'loading'
     ) {
@@ -66,7 +70,7 @@ function RootNavigator({ fontsLoaded }: { fontsLoaded: boolean }) {
 
     if (status === 'authenticated' && onboardingStatus === 'pending') {
       if (!isOnboardingRoute) {
-        router.replace('/onboarding');
+        router.navigate('/(app)/onboarding');
       }
       return;
     }
@@ -75,14 +79,14 @@ function RootNavigator({ fontsLoaded }: { fontsLoaded: boolean }) {
       status === 'authenticated' &&
       (activeGroup !== '(app)' || isOnboardingRoute)
     ) {
-      router.replace('/');
+      router.navigate('/(app)');
       return;
     }
 
     if (status === 'unauthenticated' && activeGroup !== '(auth)') {
-      router.replace('/login');
+      router.navigate('/(auth)/login');
     }
-  }, [fontsLoaded, onboardingStatus, router, segments, status]);
+  }, [fontsLoaded, navigationState?.key, onboardingStatus, router, segments, status]);
 
   useEffect(() => {
     if (

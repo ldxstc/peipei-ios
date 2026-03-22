@@ -82,7 +82,7 @@ export default function OnboardingScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.hero}>
-          <Text style={styles.kicker}>PeiPei</Text>
+          <Text style={styles.kicker}>pei·pei</Text>
           <Text style={styles.title}>{step.title}</Text>
           <Text style={styles.body}>{step.body}</Text>
         </View>
@@ -93,7 +93,7 @@ export default function OnboardingScreen() {
           <Text style={styles.stepBody}>{step.body}</Text>
 
           <View style={styles.progressRow}>
-            {ONBOARDING_STEPS.map((item, index) => (
+            {(ONBOARDING_STEPS ?? []).map((item, index) => (
               <View
                 key={item.title}
                 style={[
@@ -167,10 +167,9 @@ const styles = StyleSheet.create({
   },
   kicker: {
     color: colors.muted,
-    fontFamily: fonts.coach,
-    fontSize: 14,
-    letterSpacing: 4,
-    textTransform: 'uppercase',
+    fontFamily: fonts.brand,
+    fontSize: 18,
+    letterSpacing: 1.8,
   },
   title: {
     color: colors.text,

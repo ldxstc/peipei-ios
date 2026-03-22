@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
   RecordingPresets,
   requestRecordingPermissionsAsync,
@@ -12,12 +13,15 @@ import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { Stack, useRouter } from 'expo-router';
 import {
+  Component,
   memo,
   useEffect,
   useMemo,
   useRef,
   useState,
+  type ErrorInfo,
   type MutableRefObject,
+  type ReactNode,
 } from 'react';
 import {
   ActivityIndicator,
@@ -27,6 +31,7 @@ import {
   FlatList,
   Image,
   KeyboardAvoidingView,
+  LayoutAnimation,
   PanResponder,
   Platform,
   Pressable,
@@ -105,13 +110,16 @@ type MessageRowProps = {
   onShareImage: () => void;
 };
 
-const HEADER_ICON_SIZE = 18;
 const INITIAL_VISIBLE_MESSAGES = 40;
 const INPUT_MIN_HEIGHT = 44;
 const INPUT_MAX_HEIGHT = 120;
 const LOAD_MORE_BATCH = 20;
-const MESSAGE_MAX_WIDTH = '88%';
 const TABLET_BREAKPOINT = 960;
+const COLLAPSE_CHARACTER_THRESHOLD = 132;
+const DATA_REFERENCE_PATTERN =
+  /(\d{1,2}:\d{2}(?:\/km)?|\d{2,3}\s*(?:bpm|次\/分)|\d+(?:\.\d+)?\s*(?:km|公里|K))/gi;
+const INLINE_TOKEN_PATTERN =
+  /(\*\*[^*]+\*\*|\d{1,2}:\d{2}(?:\/km)?|\d{2,3}\s*(?:bpm|次\/分)|\d+(?:\.\d+)?\s*(?:km|公里|K))/gi;
 
 function isNetworkFailure(error: unknown) {
   return (
@@ -202,33 +210,8 @@ function getDensityTier(createdAt: Date, now: Date): DensityTier {
   return 'older';
 }
 
-function getMaxLines(tier: DensityTier) {
-  if (tier === 'this_week') {
-    return 2;
-  }
-
-  if (tier === 'older') {
-    return 1;
-  }
-
-  return undefined;
-}
-
 function getSequenceSpacing(tier: DensityTier, isFirstInSequence: boolean) {
-  if (!isFirstInSequence) {
-    return spacing.xs;
-  }
-
-  switch (tier) {
-    case 'today':
-      return 16;
-    case 'yesterday':
-      return 10;
-    case 'this_week':
-      return 8;
-    case 'older':
-      return 6;
-  }
+  return isFirstInSequence ? 16 : 8;
 }
 
 function formatDayLabel(date: Date) {
@@ -275,6 +258,94 @@ function getMessageSummary(message: CoachMessage) {
   return message.content;
 }
 
+function stripDisplayMarkup(value: string) {
+  return value
+    .replace(/<tool_calls>[\s\S]*?<\/tool_calls>/gi, '')
+    .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
+    .replace(/<\/?tool_calls\s*\/?>/gi, '')
+    .replace(/<\/?tool_call\s*\/?>/gi, '')
+    .replace(/^##+\s*/gm, '')
+    .trim();
+}
+
+function isDataReference(value: string) {
+  DATA_REFERENCE_PATTERN.lastIndex = 0;
+  return DATA_REFERENCE_PATTERN.test(value);
+}
+
+function createInlineRuns(
+  text: string,
+  baseStyle: object,
+  keyPrefix: string,
+): ReactNode[] {
+  return text
+    .split(INLINE_TOKEN_PATTERN)
+    .filter(Boolean)
+    .map((part, index) => {
+      const isBold = /^\*\*[^*]+\*\*$/.test(part);
+      const cleanPart = isBold ? part.slice(2, -2) : part;
+
+      if (!cleanPart) {
+        return null;
+      }
+
+      if (isDataReference(cleanPart)) {
+        return (
+          <Text key={`${keyPrefix}-data-${index}`} style={styles.dataReferenceText}>
+            {cleanPart}
+          </Text>
+        );
+      }
+
+      if (isBold) {
+        return (
+          <Text
+            key={`${keyPrefix}-bold-${index}`}
+            style={[baseStyle, styles.inlineStrong]}
+          >
+            {cleanPart}
+          </Text>
+        );
+      }
+
+      return (
+        <Text key={`${keyPrefix}-text-${index}`} style={baseStyle}>
+          {cleanPart}
+        </Text>
+      );
+    });
+}
+
+function renderMarkdown(
+  text: string,
+  tone: 'coach' | 'user',
+): ReactNode[] {
+  const cleaned = stripDisplayMarkup(text);
+  const paragraphs = cleaned.split(/\n+/).filter(Boolean);
+  const baseStyle =
+    tone === 'coach' ? styles.coachMessageText : styles.runnerMessageText;
+
+  return paragraphs.flatMap((paragraph, index) => {
+    const trimmed = paragraph.trim();
+    const isBullet = /^\*\s+/.test(trimmed);
+    const content = `${isBullet ? '• ' : ''}${trimmed
+      .replace(/^\*\s+/, '')
+      .replace(/^##+\s*/, '')}`;
+    const segments = createInlineRuns(content, baseStyle, `paragraph-${index}`);
+
+    if (index === 0) {
+      return segments;
+    }
+
+    return [
+      <Text key={`markdown-break-${index}`} style={baseStyle}>
+        {'\n'}
+      </Text>,
+      ...segments,
+    ];
+  });
+}
+
 function buildOptimisticContent(text: string, attachments: ComposerAttachment[]) {
   if (text.trim()) {
     return text.trim();
@@ -294,7 +365,7 @@ function buildOptimisticContent(text: string, attachments: ComposerAttachment[])
 function mapAttachmentsForApi(
   attachments: ComposerAttachment[],
 ): ChatAttachmentInput[] {
-  return attachments.map((attachment) => ({
+  return (attachments ?? []).map((attachment) => ({
     name: attachment.name,
     type: attachment.mimeType,
     uri: attachment.uri,
@@ -309,7 +380,7 @@ function buildChatItems(
 ) {
   const items: ChatItem[] = [];
 
-  messagesDesc.forEach((message, index) => {
+  (messagesDesc ?? []).forEach((message, index) => {
     const olderMessage = messagesDesc[index + 1];
     const densityTier = getDensityTier(new Date(message.createdAt), now);
     const isFirstInSequence =
@@ -355,6 +426,56 @@ function buildChatItems(
   return items;
 }
 
+function buildSafeChatViewState({
+  chatData,
+  draftMessages,
+  isLoadingMore,
+  visibleMessageCount,
+  waitingForFirstToken,
+}: {
+  chatData: { hasMore?: boolean; messages?: CoachMessage[] } | undefined;
+  draftMessages: CoachMessage[];
+  isLoadingMore: boolean;
+  visibleMessageCount: number;
+  waitingForFirstToken: boolean;
+}) {
+  try {
+    const persistedMessages = Array.isArray(chatData?.messages)
+      ? chatData.messages
+      : [];
+    const safeDraftMessages = Array.isArray(draftMessages) ? draftMessages : [];
+    const mergedMessagesDesc = [...persistedMessages, ...safeDraftMessages].sort(
+      (left, right) =>
+        new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+    );
+    const visibleMessagesDesc = mergedMessagesDesc.slice(0, visibleMessageCount);
+    const activeAssistantMessage =
+      safeDraftMessages.find((message) => message.role === 'assistant') ?? null;
+    const chatItems = buildChatItems(
+      visibleMessagesDesc,
+      new Date(),
+      isLoadingMore,
+      waitingForFirstToken ? activeAssistantMessage?.id ?? null : null,
+    );
+
+    return {
+      activeAssistantMessage,
+      chatItems,
+      mergedMessagesDesc,
+      persistedMessages,
+      visibleMessagesDesc,
+    };
+  } catch {
+    return {
+      activeAssistantMessage: null,
+      chatItems: [],
+      mergedMessagesDesc: [],
+      persistedMessages: [],
+      visibleMessagesDesc: [],
+    };
+  }
+}
+
 function createAttachmentFromPicker(
   asset: ImagePicker.ImagePickerAsset,
 ): ComposerAttachment {
@@ -380,7 +501,84 @@ function normalizeMetering(metering?: number) {
   return Math.max(0.12, Math.min(1, (metering + 60) / 60));
 }
 
+function delay(ms: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+type CoachScreenErrorBoundaryProps = {
+  children: ReactNode;
+  onReload: () => void;
+};
+
+type CoachScreenErrorBoundaryState = {
+  error: Error | null;
+};
+
+class CoachScreenErrorBoundary extends Component<
+  CoachScreenErrorBoundaryProps,
+  CoachScreenErrorBoundaryState
+> {
+  state: CoachScreenErrorBoundaryState = {
+    error: null,
+  };
+
+  static getDerivedStateFromError(error: Error) {
+    return {
+      error,
+    };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('[CoachScreen] Render crash:', error, errorInfo.componentStack);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <View style={styles.screen}>
+          <View style={styles.errorState}>
+            <Text style={styles.errorTitle}>Coach screen crashed</Text>
+            <Text style={styles.errorBody}>
+              Reload the conversation and try again.
+            </Text>
+            <Pressable
+              accessibilityLabel="Reload coach screen"
+              accessibilityRole="button"
+              onPress={this.props.onReload}
+              style={({ pressed }) => [
+                styles.retryButton,
+                pressed && styles.buttonPressed,
+              ]}
+            >
+              <Text style={styles.retryButtonText}>Reload</Text>
+            </Pressable>
+          </View>
+        </View>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 export default function CoachScreen() {
+  const [reloadKey, setReloadKey] = useState(0);
+
+  return (
+    <CoachScreenErrorBoundary
+      key={reloadKey}
+      onReload={() => {
+        setReloadKey((current) => current + 1);
+      }}
+    >
+      <CoachScreenContent />
+    </CoachScreenErrorBoundary>
+  );
+}
+
+function CoachScreenContent() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const inputRef = useRef<TextInput>(null);
@@ -388,7 +586,7 @@ export default function CoachScreen() {
   const loadMoreInFlightRef = useRef(false);
   const shouldStopRecordingRef = useRef(false);
   const { width } = useWindowDimensions();
-  const { sessionCookie, signOut, user } = useAuth();
+  const { sessionCookie, signOut } = useAuth();
   const recorder = useAudioRecorder({
     ...RecordingPresets.HIGH_QUALITY,
     isMeteringEnabled: true,
@@ -421,33 +619,41 @@ export default function CoachScreen() {
     queryKey: ['coach-chat'],
     queryFn: () => getCoachChat(sessionCookie ?? ''),
     enabled: Boolean(sessionCookie),
+    retry: false,
   });
 
   const coachSidebarQuery = useQuery({
     queryKey: ['coach-sidebar'],
     queryFn: () => getCoachSidebar(sessionCookie ?? ''),
     enabled: Boolean(sessionCookie),
+    retry: false,
     staleTime: 60_000,
   });
 
   const isTabletLayout = width >= TABLET_BREAKPOINT;
   const isRecording = recorderState.isRecording;
-  const persistedMessages = chatQuery.data?.messages ?? [];
-  const mergedMessagesDesc = [...persistedMessages, ...draftMessages].sort(
-    (left, right) =>
-      new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+  const {
+    activeAssistantMessage,
+    chatItems,
+    mergedMessagesDesc,
+    persistedMessages,
+  } = useMemo(
+    () =>
+      buildSafeChatViewState({
+        chatData: chatQuery.data,
+        draftMessages,
+        isLoadingMore,
+        visibleMessageCount,
+        waitingForFirstToken,
+      }),
+    [
+      chatQuery.data,
+      draftMessages,
+      isLoadingMore,
+      visibleMessageCount,
+      waitingForFirstToken,
+    ],
   );
-  const visibleMessagesDesc = mergedMessagesDesc.slice(0, visibleMessageCount);
-  const chatItems = buildChatItems(
-    visibleMessagesDesc,
-    new Date(),
-    isLoadingMore,
-    waitingForFirstToken
-      ? draftMessages.find((message) => message.role === 'assistant')?.id ?? null
-      : null,
-  );
-  const activeAssistantMessage =
-    draftMessages.find((message) => message.role === 'assistant') ?? null;
   const chatErrorPresentation =
     chatQuery.error && !persistedMessages.length
       ? getCoachErrorPresentation(chatQuery.error)
@@ -558,6 +764,7 @@ export default function CoachScreen() {
   }
 
   function handleExpand(messageId: string) {
+    LayoutAnimation.spring();
     setExpandedIds((current) => {
       const next = new Set(current);
       next.add(messageId);
@@ -598,7 +805,9 @@ export default function CoachScreen() {
         );
       } else {
         const result = await chatQuery.refetch();
-        const nextCount = result.data?.messages.length ?? mergedMessagesDesc.length;
+        const nextCount = Array.isArray(result.data?.messages)
+          ? result.data.messages.length
+          : mergedMessagesDesc.length;
         setVisibleMessageCount((current) =>
           Math.min(current + LOAD_MORE_BATCH, nextCount),
         );
@@ -640,11 +849,11 @@ export default function CoachScreen() {
             quality: 0.82,
           });
 
-    if (result.canceled || !result.assets.length) {
+    if (result.canceled || !result.assets?.length) {
       return;
     }
 
-    const nextAttachments = result.assets.map(createAttachmentFromPicker);
+    const nextAttachments = (result.assets ?? []).map(createAttachmentFromPicker);
     setAttachments((current) => [...current, ...nextAttachments]);
     setComposerError(null);
     inputRef.current?.focus();
@@ -720,6 +929,8 @@ export default function CoachScreen() {
     setIsStreaming(true);
     setWaitingForFirstToken(true);
     setTypingStartedAt(Date.now());
+    // Let the optimistic message render before the response parser starts work.
+    await delay(50);
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
@@ -744,7 +955,7 @@ export default function CoachScreen() {
         }
 
         setDraftMessages((current) =>
-          current.map((message) =>
+          (current ?? []).map((message) =>
             message.id === assistantMessage.id
               ? {
                   ...message,
@@ -939,52 +1150,62 @@ export default function CoachScreen() {
           onLayout={handleHeaderLayout}
           style={[styles.header, { paddingTop: insets.top + spacing.md }]}
         >
-          <View>
-            <Text style={styles.headerEyebrow}>Coach</Text>
-            <Text style={styles.headerTitle}>
-              {user?.name ? `${user.name}'s long run` : 'Daily conversation'}
-            </Text>
-          </View>
+          <LinearGradient
+            colors={[
+              'rgba(15, 14, 12, 0.98)',
+              'rgba(15, 14, 12, 0.82)',
+              'rgba(15, 14, 12, 0)',
+            ]}
+            pointerEvents="none"
+            style={styles.headerGradient}
+          />
 
-          <View style={styles.headerActions}>
-            {!isTabletLayout ? (
+          <View style={styles.headerContent}>
+            <View>
+              <Text style={styles.headerEyebrow}>Coach</Text>
+              <Text style={styles.headerTitle}>pei·pei</Text>
+            </View>
+
+            <View style={styles.headerActions}>
+              {!isTabletLayout ? (
+                <Pressable
+                  accessibilityHint="Opens the training summary panel."
+                  accessibilityLabel="Open training data"
+                  accessibilityRole="button"
+                  onPress={() => setIsSidebarOpen((current) => !current)}
+                  style={({ pressed }) => [
+                    styles.iconButton,
+                    pressed && styles.buttonPressed,
+                  ]}
+                >
+                  <Ionicons
+                    color={colors.coachLabel}
+                    name="stats-chart-outline"
+                    size={20}
+                  />
+                </Pressable>
+              ) : null}
+
               <Pressable
-                accessibilityHint="Opens the training summary panel."
-                accessibilityLabel="Open training data"
+                accessibilityHint="Opens your profile, Garmin, billing, and account settings."
+                accessibilityLabel="Open settings"
                 accessibilityRole="button"
-                onPress={() => setIsSidebarOpen((current) => !current)}
+                onPress={() => {
+                  setIsSidebarOpen(false);
+                  router.push('/settings');
+                }}
                 style={({ pressed }) => [
                   styles.iconButton,
                   pressed && styles.buttonPressed,
                 ]}
               >
                 <Ionicons
-                  color={colors.text}
-                  name="stats-chart-outline"
-                  size={HEADER_ICON_SIZE}
+                  color={colors.coachLabel}
+                  name="settings-outline"
+                  size={20}
                 />
               </Pressable>
-            ) : null}
-
-            <Pressable
-              accessibilityHint="Opens your profile, Garmin, billing, and account settings."
-              accessibilityLabel="Open settings"
-              accessibilityRole="button"
-              onPress={() => {
-                setIsSidebarOpen(false);
-                router.push('/settings');
-              }}
-              style={({ pressed }) => [
-                styles.iconButton,
-                pressed && styles.buttonPressed,
-              ]}
-            >
-              <Ionicons
-                color={colors.text}
-                name="settings-outline"
-                size={HEADER_ICON_SIZE}
-              />
-            </Pressable>
+            </View>
           </View>
         </View>
 
@@ -1099,7 +1320,7 @@ export default function CoachScreen() {
                   <Ionicons
                     color={colors.muted}
                     name="attach-outline"
-                    size={20}
+                    size={18}
                   />
                 </Pressable>
 
@@ -1114,7 +1335,7 @@ export default function CoachScreen() {
                     setComposerValue(nextValue);
                   }}
                   onContentSizeChange={handleComposerContentSizeChange}
-                  placeholder="Tell PeiPei how the legs feel..."
+                  placeholder="Message..."
                   placeholderTextColor={colors.muted}
                   returnKeyType="default"
                   style={[styles.input, { height: inputHeight }]}
@@ -1139,7 +1360,7 @@ export default function CoachScreen() {
                     {isStreaming ? (
                       <ActivityIndicator color={colors.text} size="small" />
                     ) : (
-                      <Ionicons color={colors.accent} name="arrow-up" size={20} />
+                      <Ionicons color={colors.accent} name="arrow-up" size={18} />
                     )}
                   </Pressable>
                 ) : (
@@ -1167,7 +1388,7 @@ export default function CoachScreen() {
                           : colors.muted
                       }
                       name="mic-outline"
-                      size={20}
+                      size={18}
                     />
                   </Pressable>
                 )}
@@ -1236,13 +1457,16 @@ const MessageRow = memo(function MessageRow({
   const timestampOpacity = useRef(new Animated.Value(0)).current;
   const timestampTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const replyTriggeredRef = useRef(false);
-  const [lineCount, setLineCount] = useState(0);
+  const entryOpacity = useRef(new Animated.Value(0)).current;
   const [isTimestampVisible, setIsTimestampVisible] = useState(false);
-  const maxLines = getMaxLines(densityTier);
-  const hiddenLines =
-    maxLines && lineCount > maxLines ? lineCount - maxLines : 0;
   const isUser = message.role === 'user';
   const messageBody = getMessageSummary(message);
+  const isCollapsible =
+    !isUser &&
+    densityTier !== 'today' &&
+    stripDisplayMarkup(messageBody).length > COLLAPSE_CHARACTER_THRESHOLD;
+  const shouldClamp = isCollapsible && !isExpanded;
+  const maxLines = shouldClamp ? 4 : undefined;
   const rowPanResponder = useMemo(
     () =>
       createReplyPanResponder({
@@ -1253,6 +1477,15 @@ const MessageRow = memo(function MessageRow({
       }),
     [message, onReply, translateX],
   );
+
+  useEffect(() => {
+    Animated.timing(entryOpacity, {
+      duration: 200,
+      easing: Easing.out(Easing.ease),
+      toValue: isPending ? 0.6 : 1,
+      useNativeDriver: true,
+    }).start();
+  }, [entryOpacity, isPending]);
 
   useEffect(() => {
     return () => {
@@ -1297,7 +1530,7 @@ const MessageRow = memo(function MessageRow({
         styles.messageRow,
         {
           marginTop: getSequenceSpacing(densityTier, isFirstInSequence),
-          opacity: isPending ? 0.6 : 1,
+          opacity: entryOpacity,
           transform: [{ translateX }],
         },
       ]}
@@ -1317,7 +1550,7 @@ const MessageRow = memo(function MessageRow({
       >
         <Pressable
           accessibilityHint={
-            hiddenLines > 0
+            shouldClamp
               ? 'Double tap to expand the full message. Long press to show the timestamp.'
               : 'Long press to show the timestamp.'
           }
@@ -1328,7 +1561,7 @@ const MessageRow = memo(function MessageRow({
             void handleLongPress();
           }}
           onPress={() => {
-            if (hiddenLines > 0 && !isExpanded) {
+            if (shouldClamp) {
               onExpand(message.id);
             }
           }}
@@ -1347,35 +1580,42 @@ const MessageRow = memo(function MessageRow({
               onShareImage={onShareImage}
             />
           ) : (
-            <>
-              <Text
-                numberOfLines={isExpanded ? undefined : maxLines}
-                onTextLayout={(event) => {
-                  setLineCount(event.nativeEvent.lines.length);
-                }}
-                style={isUser ? styles.runnerMessageText : styles.coachMessageText}
-              >
-                {message.content}
-              </Text>
-
-              {hiddenLines > 0 && !isExpanded ? (
-                <Pressable
-                  accessibilityLabel={`Show ${hiddenLines} more lines`}
-                  accessibilityRole="button"
-                  onPress={() => {
-                    onExpand(message.id);
-                  }}
-                  style={({ pressed }) => [
-                    styles.expandHintButton,
-                    pressed && styles.buttonPressed,
-                  ]}
+            <View style={styles.messageTextContainer}>
+              <View style={styles.markdownBlock}>
+                <Text
+                  numberOfLines={maxLines}
+                  style={isUser ? styles.runnerMessageText : styles.coachMessageText}
                 >
-                  <Text style={styles.expandHintText}>
-                    → {hiddenLines} more line{hiddenLines === 1 ? '' : 's'}
-                  </Text>
-                </Pressable>
+                  {renderMarkdown(message.content, isUser ? 'user' : 'coach')}
+                </Text>
+              </View>
+
+              {shouldClamp ? (
+                <>
+                  <LinearGradient
+                    colors={[
+                      'rgba(15, 14, 12, 0)',
+                      isUser ? 'rgba(49, 27, 27, 0.92)' : 'rgba(26, 25, 23, 0.96)',
+                    ]}
+                    pointerEvents="none"
+                    style={styles.messageFade}
+                  />
+                  <Pressable
+                    accessibilityLabel="Expand coach message"
+                    accessibilityRole="button"
+                    onPress={() => {
+                      onExpand(message.id);
+                    }}
+                    style={({ pressed }) => [
+                      styles.expandHintButton,
+                      pressed && styles.buttonPressed,
+                    ]}
+                  >
+                    <Text style={styles.expandHintText}>... tap to read more</Text>
+                  </Pressable>
+                </>
               ) : null}
-            </>
+            </View>
           )}
         </Pressable>
 
@@ -1623,7 +1863,7 @@ function AttachmentTray({
 }) {
   return (
     <View style={styles.attachmentTray}>
-      {attachments.map((attachment) => (
+      {(attachments ?? []).map((attachment) => (
         <View key={attachment.id} style={styles.attachmentChip}>
           <Text numberOfLines={1} style={styles.attachmentChipText}>
             {attachment.label}
@@ -1652,7 +1892,10 @@ function RecordingPreview({
   isStarting: boolean;
   meterSamples: number[];
 }) {
-  const samples = meterSamples.length ? meterSamples : new Array(18).fill(0.16);
+  const samples =
+    Array.isArray(meterSamples) && meterSamples.length
+      ? meterSamples
+      : new Array(18).fill(0.16);
 
   return (
     <View style={styles.recordingBar}>
@@ -1661,7 +1904,7 @@ function RecordingPreview({
         {isStarting ? 'Starting recorder…' : 'Recording voice message'}
       </Text>
       <View style={styles.waveformRow}>
-        {samples.map((sample, index) => (
+        {(samples ?? []).map((sample, index) => (
           <View
             key={`${index}-${sample.toFixed(2)}`}
             style={[
@@ -1840,23 +2083,32 @@ const styles = StyleSheet.create({
     width: 280,
   },
   header: {
+    overflow: 'hidden',
+    paddingBottom: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    position: 'relative',
+  },
+  headerGradient: {
+    ...StyleSheet.absoluteFillObject,
+    bottom: -24,
+  },
+  headerContent: {
     alignItems: 'flex-end',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingBottom: spacing.lg,
-    paddingHorizontal: spacing.lg,
   },
   headerEyebrow: {
-    color: colors.muted,
+    color: colors.coachLabel,
     fontFamily: fonts.mono,
     fontSize: 11,
-    letterSpacing: 2.2,
+    letterSpacing: 0.88,
+    textTransform: 'uppercase',
   },
   headerTitle: {
     color: colors.text,
-    fontFamily: fonts.coach,
-    fontSize: 28,
-    lineHeight: 34,
+    fontFamily: fonts.brand,
+    fontSize: 20,
+    lineHeight: 24,
     marginTop: spacing.xs,
   },
   headerActions: {
@@ -1866,13 +2118,13 @@ const styles = StyleSheet.create({
   },
   iconButton: {
     alignItems: 'center',
-    backgroundColor: colors.surface,
+    backgroundColor: 'rgba(26, 25, 23, 0.72)',
     borderColor: colors.border,
     borderRadius: radii.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-    height: 38,
+    borderWidth: 1,
+    height: 36,
     justifyContent: 'center',
-    width: 38,
+    width: 36,
   },
   list: {
     flex: 1,
@@ -1884,44 +2136,47 @@ const styles = StyleSheet.create({
   },
   dayLabelRow: {
     alignItems: 'center',
-    marginBottom: spacing.sm,
-    marginTop: spacing.lg,
+    marginBottom: 4,
+    marginTop: 12,
   },
   dayLabelText: {
     color: colors.dim,
     fontFamily: fonts.mono,
     fontSize: 11,
-    letterSpacing: 1.4,
+    letterSpacing: 0.88,
     textAlign: 'center',
+    textTransform: 'uppercase',
   },
   messageRow: {
+    alignItems: 'flex-start',
     flexDirection: 'row',
     width: '100%',
   },
   coachSide: {
     alignItems: 'center',
-    justifyContent: 'flex-end',
+    justifyContent: 'flex-start',
     marginRight: spacing.sm,
-    width: 28,
+    paddingTop: 2,
+    width: 24,
   },
   coachIndicator: {
     alignItems: 'center',
     backgroundColor: colors.surface,
     borderColor: colors.border,
     borderRadius: radii.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-    height: 24,
+    borderWidth: 1,
+    height: 20,
     justifyContent: 'center',
-    width: 24,
+    width: 20,
   },
   coachIndicatorText: {
     color: colors.text,
     fontFamily: fonts.coach,
-    fontSize: 12,
-    lineHeight: 14,
+    fontSize: 10,
+    lineHeight: 10,
   },
   indicatorSpacer: {
-    width: 24,
+    width: 20,
   },
   messageBodyColumn: {
     flex: 1,
@@ -1934,19 +2189,20 @@ const styles = StyleSheet.create({
   },
   messageBubble: {
     borderRadius: radii.card,
-    maxWidth: MESSAGE_MAX_WIDTH,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
   coachBubble: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1,
+    maxWidth: '85%',
   },
   runnerBubble: {
     backgroundColor: '#311B1B',
-    borderColor: '#4A2323',
-    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderWidth: 1,
+    maxWidth: '75%',
   },
   socialBubble: {
     paddingHorizontal: spacing.sm,
@@ -1964,14 +2220,44 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
   },
+  messageTextContainer: {
+    position: 'relative',
+  },
+  markdownBlock: {
+    gap: 0,
+  },
+  markdownParagraphSpacing: {
+    marginTop: spacing.sm,
+  },
+  inlineStrong: {
+    fontWeight: '600',
+  },
+  dataReferenceText: {
+    backgroundColor: colors.dataHighlight,
+    borderRadius: 4,
+    color: colors.text,
+    fontFamily: fonts.mono,
+    fontSize: 13,
+    lineHeight: 22,
+    overflow: 'hidden',
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+  },
+  messageFade: {
+    bottom: 0,
+    height: 48,
+    left: 0,
+    position: 'absolute',
+    right: 0,
+  },
   expandHintButton: {
     marginTop: spacing.sm,
   },
   expandHintText: {
     color: colors.muted,
-    fontFamily: fonts.mono,
-    fontSize: 11,
-    letterSpacing: 0.4,
+    fontFamily: fonts.ui,
+    fontSize: 12,
+    lineHeight: 16,
   },
   timestampContainer: {
     marginTop: spacing.xs,
@@ -1983,10 +2269,9 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
   },
   timestampText: {
-    color: colors.muted,
-    fontFamily: fonts.mono,
-    fontSize: 11,
-    letterSpacing: 0.3,
+    color: colors.dim,
+    fontFamily: fonts.ui,
+    fontSize: 12,
   },
   typingBubble: {
     minHeight: 52,
@@ -2074,7 +2359,7 @@ const styles = StyleSheet.create({
   composerContainer: {
     backgroundColor: colors.background,
     borderTopColor: colors.border,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopWidth: 1,
     gap: spacing.sm,
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.md,
@@ -2199,41 +2484,42 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     backgroundColor: colors.surface,
     borderColor: colors.border,
-    borderRadius: radii.card,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 22,
+    borderWidth: 1,
     flexDirection: 'row',
     gap: spacing.sm,
-    padding: spacing.sm,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
   },
   attachButton: {
     alignItems: 'center',
-    borderColor: colors.border,
     borderRadius: radii.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-    height: 42,
+    height: 36,
     justifyContent: 'center',
-    width: 42,
+    width: 36,
   },
   input: {
+    backgroundColor: colors.background,
+    borderRadius: 20,
     color: colors.text,
     flex: 1,
     fontSize: 15,
-    lineHeight: 20,
+    lineHeight: 22,
     maxHeight: INPUT_MAX_HEIGHT,
     minHeight: INPUT_MIN_HEIGHT,
-    paddingHorizontal: spacing.xs,
-    paddingTop: spacing.sm,
+    paddingHorizontal: 8,
+    paddingTop: 6,
   },
   sendButton: {
     alignItems: 'center',
     alignSelf: 'flex-end',
-    backgroundColor: '#241514',
-    borderColor: '#432120',
+    backgroundColor: colors.background,
+    borderColor: colors.border,
     borderRadius: radii.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-    height: 42,
+    borderWidth: 1,
+    height: 36,
     justifyContent: 'center',
-    width: 42,
+    width: 36,
   },
   micButton: {
     alignItems: 'center',
@@ -2241,10 +2527,10 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     borderColor: colors.border,
     borderRadius: radii.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-    height: 42,
+    borderWidth: 1,
+    height: 36,
     justifyContent: 'center',
-    width: 42,
+    width: 36,
   },
   micButtonActive: {
     backgroundColor: colors.accent,

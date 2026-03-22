@@ -1,6 +1,6 @@
 import { useMutation } from '@tanstack/react-query';
-import { Link } from 'expo-router';
-import { useState } from 'react';
+import { Link, useRouter } from 'expo-router';
+import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -18,7 +18,9 @@ import { ApiError } from '../../src/lib/api';
 import { useAuth } from '../../src/providers/auth-provider';
 
 export default function LoginScreen() {
+  const router = useRouter();
   const { signIn } = useAuth();
+  const submitLockRef = useRef(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
@@ -35,6 +37,21 @@ export default function LoginScreen() {
         ? loginMutation.error.message
         : null;
 
+  async function handleSignIn() {
+    if (loginMutation.isPending || submitLockRef.current) {
+      return;
+    }
+
+    submitLockRef.current = true;
+
+    try {
+      await loginMutation.mutateAsync();
+      router.navigate('/(app)');
+    } finally {
+      submitLockRef.current = false;
+    }
+  }
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -45,7 +62,7 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.hero}>
-          <Text style={styles.kicker}>PeiPei</Text>
+          <Text style={styles.kicker}>pei·pei</Text>
           <Text style={styles.title}>For the long run.</Text>
           <Text style={styles.subtitle}>
             Sign in to pick up your coach conversation where you left it.
@@ -91,7 +108,9 @@ export default function LoginScreen() {
             accessibilityLabel="Sign in"
             accessibilityRole="button"
             disabled={loginMutation.isPending}
-            onPress={() => loginMutation.mutate()}
+            onPress={() => {
+              void handleSignIn();
+            }}
             style={({ pressed }) => [
               styles.primaryButton,
               pressed && styles.buttonPressed,
@@ -107,7 +126,7 @@ export default function LoginScreen() {
 
           <Link
             accessibilityLabel="Go to registration"
-            href="/register"
+            href="/(auth)/register"
             style={styles.secondaryLink}
           >
             Need an account? Register
@@ -134,10 +153,9 @@ const styles = StyleSheet.create({
   },
   kicker: {
     color: colors.muted,
-    fontFamily: fonts.coach,
-    fontSize: 14,
-    letterSpacing: 4,
-    textTransform: 'uppercase',
+    fontFamily: fonts.brand,
+    fontSize: 18,
+    letterSpacing: 1.8,
   },
   title: {
     color: colors.text,

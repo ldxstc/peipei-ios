@@ -46,7 +46,7 @@ export default function RegisterScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.hero}>
-          <Text style={styles.kicker}>PeiPei</Text>
+          <Text style={styles.kicker}>pei·pei</Text>
           <Text style={styles.title}>Start running.</Text>
           <Text style={styles.subtitle}>
             Create your account and step straight into the coach conversation.
@@ -122,7 +122,7 @@ export default function RegisterScreen() {
 
           <Link
             accessibilityLabel="Go to sign in"
-            href="/login"
+            href="/(auth)/login"
             style={styles.secondaryLink}
           >
             Already have an account? Sign in
@@ -149,10 +149,9 @@ const styles = StyleSheet.create({
   },
   kicker: {
     color: colors.muted,
-    fontFamily: fonts.coach,
-    fontSize: 14,
-    letterSpacing: 4,
-    textTransform: 'uppercase',
+    fontFamily: fonts.brand,
+    fontSize: 18,
+    letterSpacing: 1.8,
   },
   title: {
     color: colors.text,

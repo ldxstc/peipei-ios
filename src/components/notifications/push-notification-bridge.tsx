@@ -127,8 +127,8 @@ export function PushNotificationBridge() {
           token,
           Platform.OS === 'ios' ? 'ios' : 'android',
         );
-      } catch (error) {
-        console.log('[push-token placeholder]', error);
+      } catch {
+        // Ignore placeholder push registration errors until the backend endpoint exists.
       }
     }
 
