@@ -40,6 +40,7 @@ import {
   useWindowDimensions,
   View,
   type LayoutChangeEvent,
+  type NativeScrollEvent,
   type NativeSyntheticEvent,
   type PanResponderInstance,
   type TextInputContentSizeChangeEventData,
@@ -107,6 +108,7 @@ type MessageRowProps = {
   isCascadeClosing: boolean;
   isFirstInSequence: boolean;
   isPending: boolean;
+  messageTextColor: string;
   message: CoachMessage;
   onCopyCaption: () => void;
   onReply: (message: CoachMessage) => void;
@@ -313,6 +315,7 @@ function getCascadeTimestamp(createdAt: string, paragraphIndex: number) {
 
 function getTimeAwareUi(hour: number) {
   const neutral = {
+    bodyTextColor: '#E8E8ED',
     coachBubbleColor: 'rgba(28, 28, 30, 0.85)',
     coachLabelColor: '#6E6E73',
     runnerBubbleColor: 'rgba(28, 28, 30, 0.72)',
@@ -328,6 +331,7 @@ function getTimeAwareUi(hour: number) {
   if (hour >= 22 || hour < 6) {
     return {
       ...neutral,
+      bodyTextColor: '#F5E6D3',
       coachBubbleColor: 'rgba(25,18,10,0.9)',
       runnerBubbleColor: 'rgba(25,18,10,0.82)',
     };
@@ -361,8 +365,9 @@ function isDataReference(value: string) {
 
 function createInlineRuns(
   text: string,
-  baseStyle: object,
+  baseStyle: object | object[],
   keyPrefix: string,
+  textColor?: string,
 ): ReactNode[] {
   return text
     .split(INLINE_TOKEN_PATTERN)
@@ -382,7 +387,10 @@ function createInlineRuns(
 
       if (isDataReference(cleanPart)) {
         return (
-          <Text key={`${keyPrefix}-data-${index}`} style={styles.dataReferenceText}>
+          <Text
+            key={`${keyPrefix}-data-${index}`}
+            style={[styles.dataReferenceText, textColor ? { color: textColor } : null]}
+          >
             {cleanPart}
           </Text>
         );
@@ -407,11 +415,14 @@ function createInlineRuns(
 function renderMarkdown(
   text: string,
   tone: 'coach' | 'user',
+  textColor?: string,
 ): ReactNode[] {
   const cleaned = stripDisplayMarkup(text);
   const paragraphs = cleaned.split(/\n\s*\n/).filter(Boolean);
-  const baseStyle =
-    tone === 'coach' ? styles.coachMessageText : styles.runnerMessageText;
+  const baseStyle = [
+    tone === 'coach' ? styles.coachMessageText : styles.runnerMessageText,
+    textColor ? { color: textColor } : null,
+  ];
 
   return paragraphs.flatMap((paragraph, index) => {
     const trimmed = paragraph.trim();
@@ -422,7 +433,12 @@ function renderMarkdown(
       .split('\n')
       .map((line) => line.trim())
       .join('\n')}`;
-    const segments = createInlineRuns(content, baseStyle, `paragraph-${index}`);
+    const segments = createInlineRuns(
+      content,
+      baseStyle,
+      `paragraph-${index}`,
+      textColor,
+    );
 
     if (index === 0) {
       return segments;
@@ -786,7 +802,6 @@ function CoachScreenContent() {
   );
   const avatarScale = useRef(new Animated.Value(1)).current;
   const avatarOpacity = useRef(new Animated.Value(0.85)).current;
-  const avatarTone = useRef(new Animated.Value(0)).current;
   const closingCeremonyOpacity = useRef(new Animated.Value(0)).current;
   const composerBarOpacity = useRef(new Animated.Value(1)).current;
   const scrollIndicatorOpacity = useRef(new Animated.Value(0)).current;
@@ -813,6 +828,7 @@ function CoachScreenContent() {
   const [inputHeight, setInputHeight] = useState(INPUT_MIN_HEIGHT);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isRecordingStarting, setIsRecordingStarting] = useState(false);
+  const [isSessionSummaryVisible, setIsSessionSummaryVisible] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [listContentHeight, setListContentHeight] = useState(1);
@@ -873,6 +889,8 @@ function CoachScreenContent() {
       }
     },
   ).current;
+  const shouldShowSessionSummary =
+    listContentHeight <= listViewportHeight + 1 ? true : isSessionSummaryVisible;
   const sessionSummary = useMemo(
     () => buildSessionSummary(coachSidebarQuery.data),
     [coachSidebarQuery.data],
@@ -1007,13 +1025,6 @@ function CoachScreenContent() {
       useNativeDriver: true,
     }).start();
 
-    Animated.timing(avatarTone, {
-      duration: 220,
-      easing: Easing.out(Easing.ease),
-      toValue: isStreaming ? 1 : 0,
-      useNativeDriver: false,
-    }).start();
-
     avatarScale.setValue(1);
 
     const pulse = Animated.loop(
@@ -1038,7 +1049,7 @@ function CoachScreenContent() {
     return () => {
       pulse.stop();
     };
-  }, [avatarOpacity, avatarScale, avatarTone, isStreaming]);
+  }, [avatarOpacity, avatarScale, isStreaming]);
 
   useEffect(() => {
     if (isTabletLayout && isSidebarOpen) {
@@ -1561,6 +1572,7 @@ function CoachScreenContent() {
         isCascadeClosing={item.isCascadeClosing}
         isFirstInSequence={item.isFirstInSequence}
         isPending={pendingIds.has(item.data.id)}
+        messageTextColor={timeAwareUi.bodyTextColor}
         message={item.data}
         onCopyCaption={() => runAction(() => handleCopyCaption(item.data))}
         onReply={handleReply}
@@ -1624,10 +1636,7 @@ function CoachScreenContent() {
               style={[
                 styles.headerAvatar,
                 {
-                  backgroundColor: avatarTone.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ['#30D158', '#4AE171'],
-                  }),
+                  backgroundColor: isStreaming ? '#42D965' : '#2BB84D',
                   opacity: avatarOpacity,
                   transform: [{ scale: avatarScale }],
                 },
@@ -1722,7 +1731,19 @@ function CoachScreenContent() {
                 onScroll={Animated.event(
                   [{ nativeEvent: { contentOffset: { y: scrollIndicatorY } } }],
                   {
-                    listener: () => {
+                    listener: (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+                      const nextOffset = event.nativeEvent.contentOffset.y;
+                      const nextScrollableDistance = Math.max(
+                        1,
+                        listContentHeight - listViewportHeight,
+                      );
+                      const nextVisible =
+                        nextScrollableDistance <= 1 ||
+                        nextScrollableDistance - nextOffset <= 2;
+
+                      setIsSessionSummaryVisible((current) =>
+                        current === nextVisible ? current : nextVisible,
+                      );
                       revealScrollIndicator();
                     },
                     useNativeDriver: false,
@@ -1742,7 +1763,10 @@ function CoachScreenContent() {
                 viewabilityConfig={viewabilityConfig}
                 windowSize={10}
                 ListFooterComponent={
-                  <SessionContinuityRow summary={visibleSessionSummary} />
+                  <SessionContinuitySlot
+                    summary={visibleSessionSummary}
+                    visible={shouldShowSessionSummary}
+                  />
                 }
                 ListHeaderComponent={
                   closingCeremonyActive ? (
@@ -1980,6 +2004,20 @@ const SessionContinuityRow = memo(function SessionContinuityRow({
   );
 });
 
+const SessionContinuitySlot = memo(function SessionContinuitySlot({
+  summary,
+  visible,
+}: {
+  summary: string;
+  visible: boolean;
+}) {
+  return visible ? (
+    <SessionContinuityRow summary={summary} />
+  ) : (
+    <View style={styles.sessionSummarySpacer} />
+  );
+});
+
 const ClosingCeremonyRow = memo(function ClosingCeremonyRow({
   opacity,
 }: {
@@ -2097,6 +2135,7 @@ const MessageRow = memo(function MessageRow({
   isCascadeClosing,
   isFirstInSequence,
   isPending,
+  messageTextColor,
   message,
   onCopyCaption,
   onReply,
@@ -2197,11 +2236,17 @@ const MessageRow = memo(function MessageRow({
               <View style={styles.markdownBlock}>
                 <Text
                   style={[
-                    isUser ? styles.runnerMessageText : styles.coachMessageText,
+                    isUser
+                      ? [styles.runnerMessageText, { color: messageTextColor }]
+                      : [styles.coachMessageText, { color: messageTextColor }],
                     !isUser && isCascadeClosing && styles.coachClosingMessageText,
                   ]}
                 >
-                  {renderMarkdown(message.content, isUser ? 'user' : 'coach')}
+                  {renderMarkdown(
+                    message.content,
+                    isUser ? 'user' : 'coach',
+                    messageTextColor,
+                  )}
                 </Text>
               </View>
 
@@ -2573,6 +2618,7 @@ function areMessageRowPropsEqual(
     previous.isCascadeClosing === next.isCascadeClosing &&
     previous.isFirstInSequence === next.isFirstInSequence &&
     previous.isPending === next.isPending &&
+    previous.messageTextColor === next.messageTextColor &&
     previous.message.id === next.message.id &&
     previous.message.role === next.message.role &&
     previous.message.content === next.message.content &&
@@ -2696,7 +2742,7 @@ const styles = StyleSheet.create({
   },
   headerAvatar: {
     alignItems: 'center',
-    backgroundColor: '#30D158',
+    backgroundColor: '#2BB84D',
     borderRadius: 18,
     height: 36,
     justifyContent: 'center',
@@ -2804,7 +2850,12 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     justifyContent: 'center',
     marginTop: 24,
+    minHeight: 42,
     paddingVertical: 10,
+  },
+  sessionSummarySpacer: {
+    marginTop: 24,
+    minHeight: 42,
   },
   sessionSummaryText: {
     color: '#48484A',
@@ -2870,7 +2921,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   closingBubbleAccent: {
-    borderLeftColor: '#30D158',
+    borderLeftColor: '#2BB84D',
     borderLeftWidth: 3,
   },
   socialBubble: {
