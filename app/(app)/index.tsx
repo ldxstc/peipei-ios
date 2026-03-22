@@ -31,7 +31,6 @@ import {
   FlatList,
   Image,
   KeyboardAvoidingView,
-  LayoutAnimation,
   PanResponder,
   Platform,
   Pressable,
@@ -99,12 +98,10 @@ type ComposerAttachment = {
 
 type MessageRowProps = {
   densityTier: DensityTier;
-  isExpanded: boolean;
   isFirstInSequence: boolean;
   isPending: boolean;
   message: CoachMessage;
   onCopyCaption: () => void;
-  onExpand: (messageId: string) => void;
   onReply: (message: CoachMessage) => void;
   onSaveImage: () => void;
   onShareImage: () => void;
@@ -119,11 +116,10 @@ type CoachContentModel = {
 };
 
 const INITIAL_VISIBLE_MESSAGES = 40;
-const INPUT_MIN_HEIGHT = 44;
+const INPUT_MIN_HEIGHT = 40;
 const INPUT_MAX_HEIGHT = 120;
 const LOAD_MORE_BATCH = 20;
 const TABLET_BREAKPOINT = 960;
-const COLLAPSE_CHARACTER_THRESHOLD = 132;
 const DATA_REFERENCE_PATTERN =
   /(\d{1,2}:\d{2}\s*\/\s*(?:km|mi)|\d{2,3}\s*(?:bpm|次\/分)|\d+(?:\.\d+)?\s*(?:km|公里|K)(?![a-zA-Z]))/gi;
 const INLINE_TOKEN_PATTERN =
@@ -308,28 +304,6 @@ function createInlineRuns(
         );
       }
 
-      if (isBold) {
-        return (
-          <Text
-            key={`${keyPrefix}-bold-${index}`}
-            style={[baseStyle, styles.inlineStrong, styles.inlineStrongText]}
-          >
-            {cleanPart}
-          </Text>
-        );
-      }
-
-      if (isItalic) {
-        return (
-          <Text
-            key={`${keyPrefix}-italic-${index}`}
-            style={[baseStyle, styles.inlineEmphasis]}
-          >
-            {cleanPart}
-          </Text>
-        );
-      }
-
       return (
         <Text key={`${keyPrefix}-text-${index}`} style={baseStyle}>
           {cleanPart}
@@ -462,9 +436,16 @@ function buildChatItems(
   messagesDesc: CoachMessage[],
   now: Date,
   loadingMore: boolean,
-  typingIndicatorMessageId: string | null,
+  showTypingIndicator: boolean,
 ) {
   const items: ChatItem[] = [];
+
+  if (showTypingIndicator) {
+    items.push({
+      id: 'typing-indicator',
+      type: 'typing_indicator',
+    });
+  }
 
   (messagesDesc ?? []).forEach((message, index) => {
     const olderMessage = messagesDesc[index + 1];
@@ -474,15 +455,38 @@ function buildChatItems(
       olderMessage.role !== message.role ||
       !isSameCalendarDay(message.createdAt, olderMessage.createdAt);
 
-    if (
-      typingIndicatorMessageId &&
-      message.id === typingIndicatorMessageId &&
-      message.content.trim().length === 0
-    ) {
-      items.push({
-        id: 'typing-indicator',
-        type: 'typing_indicator',
-      });
+    if (message.role === 'assistant' && message.messageType !== 'social_post') {
+      const paragraphs = splitDisplayParagraphs(message.content);
+
+      if (paragraphs.length > 1) {
+        for (let paragraphIndex = paragraphs.length - 1; paragraphIndex >= 0; paragraphIndex -= 1) {
+          const paragraph = paragraphs[paragraphIndex];
+
+          if (!paragraph) {
+            continue;
+          }
+
+          items.push({
+            data: {
+              ...message,
+              content: paragraph,
+            },
+            densityTier,
+            id: `${message.id}-p${paragraphIndex}`,
+            isFirstInSequence:
+              paragraphIndex === 0 ? isFirstInSequence : false,
+            type: 'message',
+          });
+        }
+      } else {
+        items.push({
+          data: message,
+          densityTier,
+          id: message.id,
+          isFirstInSequence,
+          type: 'message',
+        });
+      }
     } else {
       items.push({
         data: message,
@@ -535,17 +539,14 @@ function buildSafeChatViewState({
         new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
     );
     const visibleMessagesDesc = mergedMessagesDesc.slice(0, visibleMessageCount);
-    const activeAssistantMessage =
-      safeDraftMessages.find((message) => message.role === 'assistant') ?? null;
     const chatItems = buildChatItems(
       visibleMessagesDesc,
       new Date(),
       isLoadingMore,
-      waitingForFirstToken ? activeAssistantMessage?.id ?? null : null,
+      waitingForFirstToken,
     );
 
     return {
-      activeAssistantMessage,
       chatItems,
       mergedMessagesDesc,
       persistedMessages,
@@ -553,7 +554,6 @@ function buildSafeChatViewState({
     };
   } catch {
     return {
-      activeAssistantMessage: null,
       chatItems: [],
       mergedMessagesDesc: [],
       persistedMessages: [],
@@ -690,7 +690,6 @@ function CoachScreenContent() {
   );
   const [composerValue, setComposerValue] = useState('');
   const [draftMessages, setDraftMessages] = useState<CoachMessage[]>([]);
-  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [headerHeight, setHeaderHeight] = useState(0);
   const [inputHeight, setInputHeight] = useState(INPUT_MIN_HEIGHT);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -726,7 +725,6 @@ function CoachScreenContent() {
   const isTabletLayout = width >= TABLET_BREAKPOINT;
   const isRecording = recorderState.isRecording;
   const {
-    activeAssistantMessage,
     chatItems,
     mergedMessagesDesc,
     persistedMessages,
@@ -858,16 +856,6 @@ function CoachScreenContent() {
       Math.max(INPUT_MIN_HEIGHT, event.nativeEvent.contentSize.height + 12),
     );
     setInputHeight(nextHeight);
-  }
-
-  function handleExpand(messageId: string) {
-    LayoutAnimation.spring();
-    setExpandedIds((current) => {
-      const next = new Set(current);
-      next.add(messageId);
-      return next;
-    });
-    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   }
 
   function handleReply(message: CoachMessage) {
@@ -1032,12 +1020,6 @@ function CoachScreenContent() {
       id: createLocalId('runner'),
       role: 'user',
     };
-    const assistantMessage: CoachMessage = {
-      content: '',
-      createdAt: new Date(now.getTime() + 1).toISOString(),
-      id: createLocalId('coach'),
-      role: 'assistant',
-    };
     const outboundMessages: ChatRequestMessage[] = [
       ...persistedMessages,
       {
@@ -1053,7 +1035,7 @@ function CoachScreenContent() {
     setAttachments([]);
     setReplyingTo(null);
     setInputHeight(INPUT_MIN_HEIGHT);
-    setDraftMessages([userMessage, assistantMessage]);
+    setDraftMessages([userMessage]);
     setPendingIds((current) => {
       const next = new Set(current);
       next.add(userMessage.id);
@@ -1076,28 +1058,60 @@ function CoachScreenContent() {
         messages: outboundMessages,
       });
 
-      let hasReceivedFirstToken = false;
+      let paragraphBuffer = '';
+      let paragraphIndex = 0;
+      let hasDeliveredParagraph = false;
 
-      await consumeTextStream(response, async (chunk) => {
-        if (!hasReceivedFirstToken) {
-          hasReceivedFirstToken = true;
+      const appendAssistantParagraph = async (paragraph: string) => {
+        const trimmed = paragraph.trim();
+
+        if (!trimmed) {
+          return;
+        }
+
+        if (hasDeliveredParagraph) {
+          setWaitingForFirstToken(true);
+          setTypingStartedAt(Date.now());
+          await delay(400);
+        } else {
           setWaitingForFirstToken(false);
           await Haptics.notificationAsync(
             Haptics.NotificationFeedbackType.Success,
           );
         }
 
-        setDraftMessages((current) =>
-          (current ?? []).map((message) =>
-            message.id === assistantMessage.id
-              ? {
-                  ...message,
-                  content: `${message.content}${chunk}`,
-                }
-              : message,
-          ),
-        );
+        const nextAssistantMessage: CoachMessage = {
+          content: trimmed,
+          createdAt: new Date(now.getTime() + paragraphIndex + 1).toISOString(),
+          id: createLocalId('coach'),
+          role: 'assistant',
+        };
+
+        paragraphIndex += 1;
+        hasDeliveredParagraph = true;
+        setDraftMessages((current) => [...(current ?? []), nextAssistantMessage]);
+        setWaitingForFirstToken(false);
+        setTypingStartedAt(null);
+      };
+
+      const flushParagraphs = async (finalChunk: boolean) => {
+        const normalizedBuffer = paragraphBuffer.replace(/\r\n/g, '\n');
+        const segments = normalizedBuffer.split(/\n\s*\n/);
+        const completeParagraphs = finalChunk ? segments : segments.slice(0, -1);
+
+        paragraphBuffer = finalChunk ? '' : segments.at(-1) ?? '';
+
+        for (const paragraph of completeParagraphs) {
+          await appendAssistantParagraph(paragraph);
+        }
+      };
+
+      await consumeTextStream(response, async (chunk) => {
+        paragraphBuffer += chunk;
+        await flushParagraphs(false);
       });
+
+      await flushParagraphs(true);
 
       setPendingIds((current) => {
         const next = new Set(current);
@@ -1257,12 +1271,10 @@ function CoachScreenContent() {
     return (
       <MessageRow
         densityTier={item.densityTier}
-        isExpanded={expandedIds.has(item.data.id)}
         isFirstInSequence={item.isFirstInSequence}
         isPending={pendingIds.has(item.data.id)}
         message={item.data}
         onCopyCaption={() => runAction(() => handleCopyCaption(item.data))}
-        onExpand={handleExpand}
         onReply={handleReply}
         onSaveImage={() => runAction(() => handleSaveSocialImage(item.data))}
         onShareImage={() => runAction(() => handleShareSocialImage(item.data))}
@@ -1697,60 +1709,12 @@ const CoachMessageContent = memo(function CoachMessageContent({
   );
 });
 
-const CoachMonolithicContent = memo(function CoachMonolithicContent({
-  content,
-  isClamped,
-  onTextLayout,
-}: {
-  content: string;
-  isClamped: boolean;
-  onTextLayout?: (lineCount: number) => void;
-}) {
-  const maxLines = isClamped ? 6 : undefined;
-  const cleaned = stripDisplayMarkup(content);
-  const firstLineBreakIndex = cleaned.indexOf('\n');
-  const leadLine =
-    firstLineBreakIndex >= 0 ? cleaned.slice(0, firstLineBreakIndex) : cleaned;
-  const remainder =
-    firstLineBreakIndex >= 0 ? cleaned.slice(firstLineBreakIndex + 1).trim() : '';
-
-  return (
-    <View style={styles.messageTextContainer}>
-      <View style={styles.markdownBlock}>
-        <Text
-          numberOfLines={maxLines}
-          onTextLayout={
-            !isClamped && onTextLayout
-              ? (event) => {
-                  onTextLayout(event.nativeEvent.lines.length);
-                }
-              : undefined
-          }
-          style={styles.coachMessageText}
-        >
-          <Text style={styles.coachFirstLineText}>
-            {createInlineRuns(leadLine, styles.coachFirstLineText, 'coach-first-line')}
-          </Text>
-          {remainder ? (
-            <Text style={styles.coachMessageText}>
-              {'\n'}
-              {renderMarkdown(remainder, 'coach')}
-            </Text>
-          ) : null}
-        </Text>
-      </View>
-    </View>
-  );
-});
-
 const MessageRow = memo(function MessageRow({
   densityTier,
-  isExpanded,
   isFirstInSequence,
   isPending,
   message,
   onCopyCaption,
-  onExpand,
   onReply,
   onSaveImage,
   onShareImage,
@@ -1758,15 +1722,8 @@ const MessageRow = memo(function MessageRow({
   const translateX = useRef(new Animated.Value(0)).current;
   const replyTriggeredRef = useRef(false);
   const entryOpacity = useRef(new Animated.Value(0)).current;
-  const [measuredLineCount, setMeasuredLineCount] = useState(0);
   const isUser = message.role === 'user';
   const messageBody = getMessageSummary(message);
-  const estimatedOverflow = stripDisplayMarkup(messageBody).length > 320;
-  const isCollapsible =
-    !isUser &&
-    densityTier !== 'today' &&
-    (measuredLineCount > 8 || (!measuredLineCount && estimatedOverflow));
-  const shouldClamp = isCollapsible && !isExpanded;
   const rowPanResponder = useMemo(
     () =>
       createReplyPanResponder({
@@ -1813,17 +1770,11 @@ const MessageRow = memo(function MessageRow({
         ]}
       >
         <Pressable
-          accessibilityHint={
-            shouldClamp
-              ? 'Double tap to expand the full message.'
-              : undefined
-          }
           accessibilityLabel={`${isUser ? 'Your' : 'Coach'} message. ${messageBody}`}
           accessibilityRole="button"
-          onPress={() => {
-            if (shouldClamp) {
-              onExpand(message.id);
-            }
+          delayLongPress={400}
+          onLongPress={() => {
+            void onCopyCaption();
           }}
           style={[
             styles.messageBubble,
@@ -1849,42 +1800,16 @@ const MessageRow = memo(function MessageRow({
             </>
           ) : (
             <View style={styles.messageTextContainer}>
-              {isUser ? (
-                <View style={styles.markdownBlock}>
-                  <Text
-                    numberOfLines={shouldClamp ? 6 : undefined}
-                    style={styles.runnerMessageText}
-                  >
-                    {renderMarkdown(message.content, 'user')}
-                  </Text>
-                </View>
-              ) : (
-                <CoachMonolithicContent
-                  content={message.content}
-                  isClamped={shouldClamp}
-                  onTextLayout={(lineCount) => {
-                    setMeasuredLineCount((current) =>
-                      current === lineCount ? current : lineCount,
-                    );
-                  }}
-                />
-              )}
+              <View style={styles.markdownBlock}>
+                <Text style={isUser ? styles.runnerMessageText : styles.coachMessageText}>
+                  {renderMarkdown(message.content, isUser ? 'user' : 'coach')}
+                </Text>
+              </View>
 
               {!isPending ? (
                 <Text style={styles.bubbleTimestampText}>
                   {timestampLabel}
                 </Text>
-              ) : null}
-
-              {shouldClamp ? (
-                <LinearGradient
-                  colors={[
-                    'rgba(15, 14, 12, 0)',
-                    'rgba(15, 14, 12, 0.92)',
-                  ]}
-                  pointerEvents="none"
-                  style={styles.messageFade}
-                />
               ) : null}
             </View>
           )}
@@ -2239,7 +2164,6 @@ function areMessageRowPropsEqual(
 ) {
   return (
     previous.densityTier === next.densityTier &&
-    previous.isExpanded === next.isExpanded &&
     previous.isFirstInSequence === next.isFirstInSequence &&
     previous.isPending === next.isPending &&
     previous.message.id === next.message.id &&
@@ -2799,10 +2723,10 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   inputBar: {
-    alignItems: 'flex-end',
+    alignItems: 'center',
     backgroundColor: colors.background,
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
     paddingHorizontal: 0,
     paddingVertical: 2,
   },
@@ -2814,16 +2738,20 @@ const styles = StyleSheet.create({
     width: 24,
   },
   input: {
-    backgroundColor: 'transparent',
-    borderRadius: 0,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 22,
+    borderWidth: 1,
     color: colors.text,
     flex: 1,
     fontSize: 15,
     lineHeight: 25,
     maxHeight: INPUT_MAX_HEIGHT,
     minHeight: INPUT_MIN_HEIGHT,
-    paddingHorizontal: 0,
-    paddingTop: 4,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 8,
+    textAlignVertical: 'center',
   },
   sendButton: {
     alignItems: 'center',
