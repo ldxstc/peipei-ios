@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -45,6 +45,13 @@ export default function SettingsScreen() {
   const [instructionsDraft, setInstructionsDraft] = useState('');
   const [isInstructionsModalVisible, setIsInstructionsModalVisible] =
     useState(false);
+  const [garminSyncFeedback, setGarminSyncFeedback] = useState<{
+    text: string;
+    tone: 'error' | 'success';
+  } | null>(null);
+  const garminSyncFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
 
   const settingsQuery = useQuery({
     queryKey: ['settings-panel'],
@@ -63,6 +70,31 @@ export default function SettingsScreen() {
     setCustomInstructions(settingsQuery.data.customInstructions);
     setInstructionsDraft(settingsQuery.data.customInstructions);
   }, [settingsQuery.data]);
+
+  useEffect(() => {
+    return () => {
+      if (garminSyncFeedbackTimeoutRef.current) {
+        clearTimeout(garminSyncFeedbackTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  function showGarminSyncFeedback(
+    tone: 'error' | 'success',
+    text: string,
+    durationMs = 2000,
+  ) {
+    if (garminSyncFeedbackTimeoutRef.current) {
+      clearTimeout(garminSyncFeedbackTimeoutRef.current);
+    }
+
+    setGarminSyncFeedback({ text, tone });
+
+    garminSyncFeedbackTimeoutRef.current = setTimeout(() => {
+      setGarminSyncFeedback(null);
+      garminSyncFeedbackTimeoutRef.current = null;
+    }, durationMs);
+  }
 
   const saveMutation = useMutation({
     mutationFn: async (nextInstructions?: string) => {
@@ -94,7 +126,10 @@ export default function SettingsScreen() {
       await settingsQuery.refetch();
     },
     onSuccess: () => {
-      Alert.alert('Garmin sync', 'A fresh sync was requested.');
+      showGarminSyncFeedback('success', 'Synced!');
+    },
+    onError: (error) => {
+      showGarminSyncFeedback('error', getErrorMessage(error), 3200);
     },
   });
 
@@ -308,7 +343,11 @@ export default function SettingsScreen() {
                     syncMutation.isPending && styles.disabled,
                   ]}
                 >
-                  <Text style={styles.secondaryButtonText}>Sync</Text>
+                  {syncMutation.isPending ? (
+                    <ActivityIndicator color={colors.text} size="small" />
+                  ) : (
+                    <Text style={styles.secondaryButtonText}>Sync Now</Text>
+                  )}
                 </Pressable>
 
                 <Pressable
@@ -331,6 +370,19 @@ export default function SettingsScreen() {
                   <Text style={styles.destructiveButtonText}>Disconnect</Text>
                 </Pressable>
               </View>
+
+              {garminSyncFeedback ? (
+                <Text
+                  style={[
+                    styles.feedbackText,
+                    garminSyncFeedback.tone === 'error'
+                      ? styles.feedbackError
+                      : styles.feedbackSuccess,
+                  ]}
+                >
+                  {garminSyncFeedback.text}
+                </Text>
+              ) : null}
             </SectionCard>
 
             <SectionCard title="Coach Instructions">
@@ -739,6 +791,17 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 15,
     fontWeight: '600',
+  },
+  feedbackText: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: spacing.md,
+  },
+  feedbackSuccess: {
+    color: colors.text,
+  },
+  feedbackError: {
+    color: '#E4A0A0',
   },
   destructiveButton: {
     borderColor: '#6D3030',
