@@ -56,11 +56,10 @@ import {
   type CoachSidebarData,
   type CoachMessage,
   ApiError,
-  consumeTextStream,
   createLocalId,
   getCoachChat,
   getCoachSidebar,
-  openCoachChatStream,
+  streamCoachChat,
 } from '../../src/lib/api';
 import { syncPeiPeiWidgets } from '../../src/lib/peipei-widgets';
 import {
@@ -1337,20 +1336,9 @@ function CoachScreenContent() {
     setIsStreaming(true);
     setWaitingForFirstToken(true);
     setTypingStartedAt(Date.now());
-    // Let the optimistic message render before the response parser starts work.
-    await delay(50);
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      const response = await openCoachChatStream(sessionCookie, {
-        attachments:
-          outgoingAttachments.length > 0
-            ? mapAttachmentsForApi(outgoingAttachments)
-            : undefined,
-        contextType: 'general',
-        messages: outboundMessages,
-      });
-
       let paragraphBuffer = '';
       let paragraphIndex = 0;
       let hasDeliveredParagraph = false;
@@ -1401,10 +1389,21 @@ function CoachScreenContent() {
         }
       };
 
-      await consumeTextStream(response, async (chunk) => {
-        paragraphBuffer += chunk;
-        await flushParagraphs(false);
-      });
+      await streamCoachChat(
+        sessionCookie,
+        {
+          attachments:
+            outgoingAttachments.length > 0
+              ? mapAttachmentsForApi(outgoingAttachments)
+              : undefined,
+          contextType: 'general',
+          messages: outboundMessages,
+        },
+        async (chunk) => {
+          paragraphBuffer += chunk;
+          await flushParagraphs(false);
+        },
+      );
 
       await flushParagraphs(true);
 

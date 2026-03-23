@@ -640,13 +640,15 @@ export async function getCoachChat(sessionToken: string) {
   } satisfies CoachChatResponse;
 }
 
-export async function openCoachChatStream(
+type StreamCoachChatBody = {
+  attachments?: ChatAttachmentInput[];
+  contextType: 'general';
+  messages: ChatRequestMessage[];
+};
+
+function buildCoachChatStreamRequest(
   sessionToken: string,
-  body: {
-    attachments?: ChatAttachmentInput[];
-    contextType: 'general';
-    messages: ChatRequestMessage[];
-  },
+  body: StreamCoachChatBody,
 ) {
   const hasAttachments = Boolean(body.attachments?.length);
   const headers = new Headers({
@@ -678,21 +680,171 @@ export async function openCoachChatStream(
     });
   }
 
-  const response = await fetch(`${API_BASE_URL}/api/coach/chat`, {
-    method: 'POST',
+  return {
     headers,
-    body: requestBody,
-  });
+    requestBody,
+  };
+}
 
-  if (!response.ok) {
-    const payload = await readResponsePayload(response);
-    throw new ApiError(
-      buildMessageFromPayload(payload.json, payload.text || 'Unable to stream chat.'),
-      response.status,
-    );
+function parseIncrementalStreamLines(
+  rawChunk: string,
+  onTextChunk: (chunk: string) => void | Promise<void>,
+) {
+  const normalizedChunk = rawChunk.replace(/\r\n/g, '\n');
+  const lines = normalizedChunk.split('\n');
+  const nextLineBuffer = lines.pop() ?? '';
+  const deliveredChunks: Array<void | Promise<void>> = [];
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+
+    if (!line || line === '[DONE]' || line === 'data: [DONE]') {
+      continue;
+    }
+
+    if (line.startsWith('data:')) {
+      const data = line.slice(5).trim();
+      const parsed = safeJsonParse<unknown>(data);
+      const chunk = extractTextChunk(parsed ?? data);
+
+      if (chunk) {
+        deliveredChunks.push(onTextChunk(chunk));
+      }
+
+      continue;
+    }
+
+    const match = line.match(/^(\d+):(.*)$/);
+    if (!match || match[1] !== '0') {
+      continue;
+    }
+
+    const data = match[2].trim();
+    const parsed = safeJsonParse<unknown>(data);
+    const chunk =
+      typeof parsed === 'string' ? parsed : extractTextChunk(parsed ?? data);
+
+    if (chunk) {
+      deliveredChunks.push(onTextChunk(chunk));
+    }
   }
 
-  return response;
+  return {
+    nextLineBuffer,
+    streamWork: Promise.all(deliveredChunks).then(() => undefined),
+  };
+}
+
+export function streamCoachChat(
+  sessionToken: string,
+  body: StreamCoachChatBody,
+  onTextChunk: (chunk: string) => void | Promise<void>,
+) {
+  const { headers, requestBody } = buildCoachChatStreamRequest(sessionToken, body);
+
+  return new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    let responseCursor = 0;
+    let lineBuffer = '';
+    let streamQueue = Promise.resolve();
+    let settled = false;
+
+    const rejectOnce = (error: unknown) => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      reject(error);
+    };
+
+    const resolveOnce = () => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      resolve();
+    };
+
+    const enqueueParsing = (textChunk: string) => {
+      if (!textChunk) {
+        return;
+      }
+
+      streamQueue = streamQueue
+        .then(async () => {
+          const { nextLineBuffer, streamWork } = parseIncrementalStreamLines(
+            `${lineBuffer}${textChunk}`,
+            onTextChunk,
+          );
+          lineBuffer = nextLineBuffer;
+          await streamWork;
+        })
+        .catch(rejectOnce);
+    };
+
+    xhr.open('POST', `${API_BASE_URL}/api/coach/chat`, true);
+
+    headers.forEach((value, key) => {
+      xhr.setRequestHeader(key, value);
+    });
+
+    xhr.onreadystatechange = () => {
+      if (xhr.readyState === XMLHttpRequest.HEADERS_RECEIVED && xhr.status >= 400) {
+        rejectOnce(new ApiError('Unable to stream chat.', xhr.status));
+      }
+    };
+
+    xhr.onprogress = () => {
+      const nextChunk = xhr.responseText.slice(responseCursor);
+      responseCursor = xhr.responseText.length;
+      enqueueParsing(nextChunk);
+    };
+
+    xhr.onerror = () => {
+      rejectOnce(new ApiError('Unable to stream chat.', xhr.status || 0));
+    };
+
+    xhr.ontimeout = () => {
+      rejectOnce(new ApiError('The chat request timed out.', xhr.status || 0));
+    };
+
+    xhr.onload = () => {
+      const nextChunk = xhr.responseText.slice(responseCursor);
+      responseCursor = xhr.responseText.length;
+      enqueueParsing(nextChunk);
+
+      streamQueue
+        .then(async () => {
+          const { nextLineBuffer, streamWork } = parseIncrementalStreamLines(
+            lineBuffer ? `${lineBuffer}\n` : '',
+            onTextChunk,
+          );
+          lineBuffer = nextLineBuffer;
+          await streamWork;
+
+          if (xhr.status >= 400) {
+            const parsedPayload = safeJsonParse<JsonValue>(xhr.responseText);
+            rejectOnce(
+              new ApiError(
+                buildMessageFromPayload(
+                  parsedPayload,
+                  xhr.responseText || 'Unable to stream chat.',
+                ),
+                xhr.status,
+              ),
+            );
+            return;
+          }
+
+          resolveOnce();
+        })
+        .catch(rejectOnce);
+    };
+
+    xhr.send(requestBody);
+  });
 }
 
 export async function getSettingsPanel(sessionToken: string) {
@@ -1041,52 +1193,4 @@ export function extractTextChunk(payload: unknown): string {
   }
 
   return '';
-}
-
-export async function consumeTextStream(
-  response: Response,
-  onTextChunk: (chunk: string) => void | Promise<void>,
-) {
-  const text = await response.text();
-  const lines = text.split(/\r?\n/);
-
-  for (const rawLine of lines) {
-    const line = rawLine.trim();
-
-    if (!line || line === '[DONE]' || line === 'data: [DONE]') {
-      continue;
-    }
-
-    if (line.startsWith('data:')) {
-      const data = line.slice(5).trim();
-      const parsed = safeJsonParse<unknown>(data);
-      const chunk = extractTextChunk(parsed ?? data);
-
-      if (chunk) {
-        await onTextChunk(chunk);
-      }
-
-      continue;
-    }
-
-    const match = line.match(/^(\d+):(.*)$/);
-    if (!match) {
-      continue;
-    }
-
-    const [, type, data] = match;
-    if (type !== '0') {
-      continue;
-    }
-
-    const parsed = safeJsonParse<unknown>(data.trim());
-    const chunk =
-      typeof parsed === 'string'
-        ? parsed
-        : extractTextChunk(parsed ?? data.trim());
-
-    if (chunk) {
-      await onTextChunk(chunk);
-    }
-  }
 }
