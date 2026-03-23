@@ -1105,31 +1105,37 @@ export async function registerPushToken(
   token: string,
   platform: 'ios' | 'android',
 ) {
-  const headers = new Headers({
-    Accept: 'application/json',
-    'Content-Type': 'application/json',
-  });
-  applyTrustedOriginHeaders(headers);
-  applySessionAuthHeaders(headers, sessionToken);
+  try {
+    const headers = new Headers({
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+    });
+    applyTrustedOriginHeaders(headers);
+    applySessionAuthHeaders(headers, sessionToken);
 
-  const response = await fetch(`${API_BASE_URL}/api/user/push-token`, {
-    body: JSON.stringify({
-      platform,
-      token,
-    }),
-    headers,
-    method: 'POST',
-  });
+    const response = await fetch(`${API_BASE_URL}/api/user/push-token`, {
+      body: JSON.stringify({
+        platform,
+        token,
+      }),
+      headers,
+      method: 'POST',
+    });
 
-  if (!response.ok) {
+    if (!response.ok) {
+      return {
+        registered: false,
+      } satisfies PushRegistrationResult;
+    }
+
+    return {
+      registered: true,
+    } satisfies PushRegistrationResult;
+  } catch {
     return {
       registered: false,
     } satisfies PushRegistrationResult;
   }
-
-  return {
-    registered: true,
-  } satisfies PushRegistrationResult;
 }
 
 export async function createCoachSocialPost(
