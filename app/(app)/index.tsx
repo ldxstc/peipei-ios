@@ -25,6 +25,7 @@ import {
 } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   Alert,
   Animated,
   Easing,
@@ -66,6 +67,13 @@ import {
   saveRemoteImageToLibrary,
   shareRemoteImage,
 } from '../../src/lib/social-sharing';
+import {
+  enqueueChatMessage,
+  getQueuedChatMessageCount,
+  getQueuedChatMessages,
+  removeQueuedChatMessage,
+  type OfflineQueuedAttachment,
+} from '../../src/lib/offline-queue';
 import { useAuth } from '../../src/providers/auth-provider';
 
 type DensityTier = 'today' | 'yesterday' | 'this_week' | 'older';
@@ -796,6 +804,7 @@ function CoachScreenContent() {
     null,
   );
   const loadMoreInFlightRef = useRef(false);
+  const queueFlushInFlightRef = useRef(false);
   const scrollIndicatorFadeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -826,6 +835,7 @@ function CoachScreenContent() {
   const [headerHeight, setHeaderHeight] = useState(0);
   const [inputHeight, setInputHeight] = useState(INPUT_MIN_HEIGHT);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isQueueSending, setIsQueueSending] = useState(false);
   const [isRecordingStarting, setIsRecordingStarting] = useState(false);
   const [isSessionSummaryVisible, setIsSessionSummaryVisible] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -834,6 +844,7 @@ function CoachScreenContent() {
   const [listViewportHeight, setListViewportHeight] = useState(1);
   const [meterSamples, setMeterSamples] = useState<number[]>([]);
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
+  const [queuedMessageCount, setQueuedMessageCount] = useState(0);
   const [replyingTo, setReplyingTo] = useState<CoachMessage | null>(null);
   const [stickyDayLabel, setStickyDayLabel] = useState(() =>
     formatStickyDayLabel(new Date()),
@@ -929,6 +940,30 @@ function CoachScreenContent() {
     chatQuery.error && !persistedMessages.length
       ? getCoachErrorPresentation(chatQuery.error)
       : null;
+
+  useEffect(() => {
+    if (!sessionCookie) {
+      setQueuedMessageCount(0);
+      setIsQueueSending(false);
+      return;
+    }
+
+    void refreshQueuedMessageCount();
+    void flushQueuedMessages();
+  }, [sessionCookie]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        void refreshQueuedMessageCount();
+        void flushQueuedMessages();
+      }
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [attachments.length, composerValue, isStreaming, sessionCookie]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -1286,10 +1321,77 @@ function CoachScreenContent() {
     );
   }
 
+  async function refreshQueuedMessageCount() {
+    if (!sessionCookie) {
+      setQueuedMessageCount(0);
+      return;
+    }
+
+    const count = await getQueuedChatMessageCount();
+    setQueuedMessageCount(count);
+  }
+
+  function mapQueuedAttachmentsToComposer(
+    queuedAttachments: OfflineQueuedAttachment[],
+  ): ComposerAttachment[] {
+    return queuedAttachments.map((attachment) => ({
+      id: attachment.id,
+      kind: attachment.kind,
+      label: attachment.label,
+      mimeType: attachment.mimeType,
+      name: attachment.name,
+      uri: attachment.uri,
+    }));
+  }
+
+  async function flushQueuedMessages() {
+    if (
+      !sessionCookie ||
+      isStreaming ||
+      queueFlushInFlightRef.current ||
+      composerValue.trim().length > 0 ||
+      attachments.length > 0
+    ) {
+      return;
+    }
+
+    queueFlushInFlightRef.current = true;
+
+    try {
+      const queuedMessages = await getQueuedChatMessages();
+
+      if (!queuedMessages.length) {
+        setQueuedMessageCount(0);
+        return;
+      }
+
+      setQueuedMessageCount(queuedMessages.length);
+      setIsQueueSending(true);
+
+      for (const queuedMessage of queuedMessages) {
+        await submitMessage({
+          attachments: mapQueuedAttachmentsToComposer(queuedMessage.attachments),
+          composerText: queuedMessage.composerText,
+          optimisticContent: queuedMessage.optimisticContent,
+          queueOnNetworkError: false,
+        });
+        await removeQueuedChatMessage(queuedMessage.id);
+        await refreshQueuedMessageCount();
+      }
+    } catch {
+      // Leave any unsent messages in storage for the next foreground retry.
+    } finally {
+      queueFlushInFlightRef.current = false;
+      setIsQueueSending(false);
+      await refreshQueuedMessageCount();
+    }
+  }
+
   async function submitMessage(options?: {
     attachments?: ComposerAttachment[];
     composerText?: string;
     optimisticContent?: string;
+    queueOnNetworkError?: boolean;
   }) {
     const composerText = options?.composerText ?? composerValue;
     const outgoingAttachments = options?.attachments ?? attachments;
@@ -1305,6 +1407,7 @@ function CoachScreenContent() {
     const inputHeightBeforeSend = inputHeight;
     const optimisticContent =
       options?.optimisticContent ?? buildOptimisticContent(text, outgoingAttachments);
+    const queueOnNetworkError = options?.queueOnNetworkError ?? true;
     const now = new Date();
     const userMessage: CoachMessage = {
       content: optimisticContent,
@@ -1431,13 +1534,45 @@ function CoachScreenContent() {
       setInputHeight(inputHeightBeforeSend);
 
       const errorPresentation = getCoachErrorPresentation(error);
+      const shouldQueueMessage = queueOnNetworkError && isNetworkFailure(error);
+
+      if (shouldQueueMessage) {
+        await enqueueChatMessage({
+          attachments: outgoingAttachments.map((attachment) => ({
+            id: attachment.id,
+            kind: attachment.kind,
+            label: attachment.label,
+            mimeType: attachment.mimeType,
+            name: attachment.name,
+            uri: attachment.uri,
+          })),
+          composerText,
+          createdAt: now.toISOString(),
+          id: createLocalId('queued'),
+          optimisticContent,
+        });
+        await refreshQueuedMessageCount();
+
+        setComposerError({
+          description: 'Message saved. It will send automatically when you are back online.',
+          primaryActionLabel: 'OK',
+          title: 'Queued offline',
+        });
+      } else {
+        setComposerValue(composerTextBeforeSend);
+        setAttachments(attachmentsBeforeSend);
+        setReplyingTo(replyBeforeSend);
+        setInputHeight(inputHeightBeforeSend);
+      }
 
       if (errorPresentation.requiresSignOut) {
         Alert.alert(errorPresentation.title, errorPresentation.description);
         await signOut();
         router.replace('/login');
       } else {
-        setComposerError(errorPresentation);
+        if (!shouldQueueMessage) {
+          setComposerError(errorPresentation);
+        }
       }
     } finally {
       setIsStreaming(false);
@@ -1820,6 +1955,17 @@ function CoachScreenContent() {
                 },
               ]}
             >
+              {isQueueSending ? (
+                <View style={styles.queueIndicator}>
+                  <ActivityIndicator color={colors.muted} size="small" />
+                  <Text style={styles.queueIndicatorText}>
+                    {queuedMessageCount > 0
+                      ? `Sending queued messages (${queuedMessageCount})...`
+                      : 'Sending queued messages...'}
+                  </Text>
+                </View>
+              ) : null}
+
               {replyingTo ? (
                 <ReplyBar
                   onClear={clearReply}
@@ -3142,6 +3288,21 @@ const styles = StyleSheet.create({
     minHeight: 78,
     paddingHorizontal: 16,
     paddingTop: 10,
+  },
+  queueIndicator: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(28, 28, 30, 0.72)',
+    borderRadius: radii.pill,
+    flexDirection: 'row',
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  queueIndicatorText: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 16,
   },
   replyBar: {
     alignItems: 'center',
