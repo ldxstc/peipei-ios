@@ -68,6 +68,7 @@ import {
   saveRemoteImageToLibrary,
   shareRemoteImage,
 } from '../../src/lib/social-sharing';
+import { PeiPeiLogoMark } from '../../src/components/branding/peipei-logo';
 import {
   enqueueChatMessage,
   getQueuedChatMessageCount,
@@ -144,10 +145,11 @@ const MESSAGE_ENTRY_EASING = Easing.bezier(0.25, 0.1, 0.25, 1);
 const SETTINGS_HINT_KEY = 'peipei.settings_hint_seen';
 const COACH_CLOSING_PHRASE_RE =
   /关手机|明天见|去睡觉|晚安|good night|sleep well|rest up/i;
+const CODE_SPAN_RE = /^`([^`\n]+)`$/;
 const DATA_REFERENCE_PATTERN =
   /(\d{1,2}:\d{2}\s*\/\s*(?:km|mi)|\d{2,3}\s*(?:bpm|次\/分)|\d+(?:\.\d+)?\s*(?:km|公里|K)(?![a-zA-Z]))/gi;
 const INLINE_TOKEN_PATTERN =
-  /(`[^`\n]+`|\*\*.+?\*\*|\*[^*\n]+\*|\d{1,2}:\d{2}\s*\/\s*(?:km|mi)|\d{2,3}\s*(?:bpm|次\/分)|\d+(?:\.\d+)?\s*(?:km|公里|K)(?![a-zA-Z]))/gi;
+  /(`[^`\n]+`|\*\*.+?\*\*|\*[^*\n]+\*|\d{1,2}:\d{2}\s*\/\s*(?:km|mi)|\d{2,3}\s*(?:bpm|次\/分)|\d+(?:\.\d+)?\s*(?:km|公里|K)(?![a-zA-Z]))/g;
 
 function isNetworkFailure(error: unknown) {
   return (
@@ -382,7 +384,7 @@ function createInlineRuns(
     .split(INLINE_TOKEN_PATTERN)
     .filter(Boolean)
     .map((part, index) => {
-      const isCode = /^`[^`\n]+`$/.test(part);
+      const isCode = CODE_SPAN_RE.test(part);
       const isBold = /^\*\*.+\*\*$/.test(part);
       const isItalic = !isBold && /^\*[^*\n]+\*$/.test(part);
       const cleanPart = isCode
@@ -480,8 +482,19 @@ function renderMarkdown(
 }
 
 function splitDisplayParagraphs(text: string) {
-  return stripDisplayMarkup(text)
-    .split(/\n\s*\n/)
+  const cleaned = stripDisplayMarkup(text);
+  const usesDoubleNewlineParagraphs = /\n\s*\n/.test(cleaned);
+  const shouldSplitSingleNewlines =
+    !usesDoubleNewlineParagraphs &&
+    cleaned.length > 150 &&
+    cleaned.includes('\n');
+  const paragraphSource = usesDoubleNewlineParagraphs
+    ? cleaned.split(/\n\s*\n/)
+    : shouldSplitSingleNewlines
+      ? cleaned.split('\n')
+      : [cleaned];
+
+  return paragraphSource
     .map((paragraph) =>
       paragraph
         .trim()
@@ -1823,20 +1836,19 @@ function CoachScreenContent() {
                 style={[
                   styles.headerAvatar,
                   {
-                    backgroundColor: isStreaming ? '#42D965' : '#2BB84D',
                     opacity: avatarOpacity,
                     transform: [{ scale: avatarScale }],
                   },
                 ]}
               >
-                <Text style={styles.headerAvatarText}>P</Text>
+                <PeiPeiLogoMark size={28} />
               </Animated.View>
 
               <View style={styles.headerTitleBlock}>
                 <Text style={[styles.headerEyebrow, { color: timeAwareUi.coachLabelColor }]}>
                   COACH
                 </Text>
-                <Text style={styles.headerTitle}>pei·pei</Text>
+                <Text style={styles.headerTitle}>PEIPEI</Text>
               </View>
             </Pressable>
 
@@ -2122,7 +2134,7 @@ function CoachScreenContent() {
                   }}
                   onContentSizeChange={handleComposerContentSizeChange}
                   placeholder={
-                    isComposerResting ? '💤 Coach says rest...' : 'Message pei·pei...'
+                    isComposerResting ? '💤 Coach says rest...' : 'Message PEIPEI...'
                   }
                   placeholderTextColor="#48484A"
                   returnKeyType="default"
@@ -2986,11 +2998,9 @@ const styles = StyleSheet.create({
   },
   headerAvatar: {
     alignItems: 'center',
-    backgroundColor: '#2BB84D',
-    borderRadius: 18,
-    height: 36,
+    height: 28,
     justifyContent: 'center',
-    width: 36,
+    width: 28,
   },
   headerAvatarText: {
     color: '#F5F5F7',
@@ -3051,10 +3061,11 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     color: '#F5F5F7',
-    fontFamily: fonts.brand,
-    fontSize: 28,
-    fontWeight: '600',
-    lineHeight: 32,
+    fontFamily: fonts.coach,
+    fontSize: 24,
+    fontWeight: '400',
+    letterSpacing: 4,
+    lineHeight: 30,
     marginTop: 4,
   },
   headerDivider: {

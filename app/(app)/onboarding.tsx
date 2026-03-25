@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { PeiPeiLogo } from '../../src/components/branding/peipei-logo';
 import { colors, fonts, radii, spacing } from '../../src/design/tokens';
 import { useAuth } from '../../src/providers/auth-provider';
 
@@ -82,7 +83,7 @@ export default function OnboardingScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.hero}>
-          <Text style={styles.kicker}>pei·pei</Text>
+          <PeiPeiLogo markSize={48} style={styles.logoLockup} />
           <Text style={styles.title}>{step.title}</Text>
           <Text style={styles.body}>{step.body}</Text>
         </View>
@@ -163,25 +164,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
   },
   hero: {
+    alignItems: 'center',
     gap: spacing.md,
   },
-  kicker: {
-    color: colors.muted,
-    fontFamily: fonts.brand,
-    fontSize: 18,
-    letterSpacing: 1.8,
+  logoLockup: {
+    marginBottom: spacing.sm,
   },
   title: {
     color: colors.text,
     fontFamily: fonts.coach,
     fontSize: 40,
     lineHeight: 48,
+    textAlign: 'center',
   },
   body: {
     color: colors.muted,
     fontSize: 17,
     lineHeight: 26,
     maxWidth: 440,
+    textAlign: 'center',
   },
   card: {
     backgroundColor: colors.surface,

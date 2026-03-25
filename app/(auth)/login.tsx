@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 
+import { PeiPeiLogo } from '../../src/components/branding/peipei-logo';
 import { colors, fonts, radii, spacing } from '../../src/design/tokens';
 import { ApiError } from '../../src/lib/api';
 import { useAuth } from '../../src/providers/auth-provider';
@@ -62,7 +63,7 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.hero}>
-          <Text style={styles.kicker}>pei·pei</Text>
+          <PeiPeiLogo markSize={48} style={styles.logoLockup} />
           <Text style={styles.title}>For the long run.</Text>
           <Text style={styles.subtitle}>
             Sign in to pick up your coach conversation where you left it.
@@ -149,24 +150,24 @@ const styles = StyleSheet.create({
     gap: spacing.xl,
   },
   hero: {
+    alignItems: 'center',
     gap: spacing.md,
   },
-  kicker: {
-    color: colors.muted,
-    fontFamily: fonts.brand,
-    fontSize: 18,
-    letterSpacing: 1.8,
+  logoLockup: {
+    marginBottom: spacing.sm,
   },
   title: {
     color: colors.text,
     fontFamily: fonts.coach,
     fontSize: 42,
     lineHeight: 48,
+    textAlign: 'center',
   },
   subtitle: {
     color: colors.muted,
     fontSize: 16,
     lineHeight: 24,
+    textAlign: 'center',
   },
   card: {
     backgroundColor: colors.surface,
