@@ -1,4 +1,5 @@
 import { Feather, Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -140,12 +141,13 @@ const LOAD_MORE_BATCH = 20;
 const TABLET_BREAKPOINT = 960;
 const MESSAGE_ENTRY_STAGGER_MS = 800;
 const MESSAGE_ENTRY_EASING = Easing.bezier(0.25, 0.1, 0.25, 1);
+const SETTINGS_HINT_KEY = 'peipei.settings_hint_seen';
 const COACH_CLOSING_PHRASE_RE =
   /关手机|明天见|去睡觉|晚安|good night|sleep well|rest up/i;
 const DATA_REFERENCE_PATTERN =
   /(\d{1,2}:\d{2}\s*\/\s*(?:km|mi)|\d{2,3}\s*(?:bpm|次\/分)|\d+(?:\.\d+)?\s*(?:km|公里|K)(?![a-zA-Z]))/gi;
 const INLINE_TOKEN_PATTERN =
-  /(\*\*.+?\*\*|\*[^*\n]+\*|\d{1,2}:\d{2}\s*\/\s*(?:km|mi)|\d{2,3}\s*(?:bpm|次\/分)|\d+(?:\.\d+)?\s*(?:km|公里|K)(?![a-zA-Z]))/gi;
+  /(`[^`\n]+`|\*\*.+?\*\*|\*[^*\n]+\*|\d{1,2}:\d{2}\s*\/\s*(?:km|mi)|\d{2,3}\s*(?:bpm|次\/分)|\d+(?:\.\d+)?\s*(?:km|公里|K)(?![a-zA-Z]))/gi;
 
 function isNetworkFailure(error: unknown) {
   return (
@@ -380,9 +382,12 @@ function createInlineRuns(
     .split(INLINE_TOKEN_PATTERN)
     .filter(Boolean)
     .map((part, index) => {
+      const isCode = /^`[^`\n]+`$/.test(part);
       const isBold = /^\*\*.+\*\*$/.test(part);
       const isItalic = !isBold && /^\*[^*\n]+\*$/.test(part);
-      const cleanPart = isBold
+      const cleanPart = isCode
+        ? part.slice(1, -1)
+        : isBold
         ? part.slice(2, -2)
         : isItalic
           ? part.slice(1, -1)
@@ -390,6 +395,20 @@ function createInlineRuns(
 
       if (!cleanPart) {
         return null;
+      }
+
+      if (isCode) {
+        return (
+          <Text
+            key={`${keyPrefix}-code-${index}`}
+            style={[
+              styles.inlineCodeText,
+              textColor ? { color: textColor } : null,
+            ]}
+          >
+            {cleanPart}
+          </Text>
+        );
       }
 
       if (isDataReference(cleanPart)) {
@@ -473,6 +492,10 @@ function splitDisplayParagraphs(text: string) {
         .trim(),
     )
     .filter(Boolean);
+}
+
+function hasMultipleDisplayParagraphs(text: string) {
+  return splitDisplayParagraphs(text).length > 1;
 }
 
 function getCoachContentModel(text: string): CoachContentModel {
@@ -564,55 +587,39 @@ function buildChatItems(
 
   (messagesDesc ?? []).forEach((message, index) => {
     const olderMessage = messagesDesc[index + 1];
-    const newerMessage = messagesDesc[index - 1];
     const densityTier = getDensityTier(new Date(message.createdAt), now);
     const isFirstInSequence =
       !olderMessage ||
       olderMessage.role !== message.role ||
       !isSameCalendarDay(message.createdAt, olderMessage.createdAt);
-    const isLastInSequence =
-      !newerMessage ||
-      newerMessage.role !== message.role ||
-      !isSameCalendarDay(message.createdAt, newerMessage.createdAt);
 
-    if (message.role === 'assistant' && message.messageType !== 'social_post') {
+    if (
+      message.role === 'assistant' &&
+      message.messageType !== 'social_post' &&
+      hasMultipleDisplayParagraphs(message.content)
+    ) {
       const paragraphs = splitDisplayParagraphs(message.content);
 
-      if (paragraphs.length > 1) {
-        for (let paragraphIndex = paragraphs.length - 1; paragraphIndex >= 0; paragraphIndex -= 1) {
-          const paragraph = paragraphs[paragraphIndex];
+      for (let paragraphIndex = paragraphs.length - 1; paragraphIndex >= 0; paragraphIndex -= 1) {
+        const paragraph = paragraphs[paragraphIndex];
 
-          if (!paragraph) {
-            continue;
-          }
-
-          items.push({
-            animationDelay: paragraphIndex * MESSAGE_ENTRY_STAGGER_MS,
-            data: {
-              ...message,
-              content: paragraph,
-              createdAt: getCascadeTimestamp(message.createdAt, paragraphIndex),
-            },
-            densityTier,
-            id: `${message.id}-p${paragraphIndex}`,
-            isCascadeClosing:
-              paragraphIndex === paragraphs.length - 1 && paragraph.trim().length < 25,
-            isFirstInSequence:
-              paragraphIndex === 0 ? isFirstInSequence : false,
-            type: 'message',
-          });
+        if (!paragraph) {
+          continue;
         }
-      } else {
+
         items.push({
-          animationDelay: 0,
-          data: message,
+          animationDelay: paragraphIndex * MESSAGE_ENTRY_STAGGER_MS,
+          data: {
+            ...message,
+            content: paragraph,
+            createdAt: getCascadeTimestamp(message.createdAt, paragraphIndex),
+          },
           densityTier,
-          id: message.id,
+          id: `${message.id}-p${paragraphIndex}`,
           isCascadeClosing:
-            isLastInSequence &&
-            !isFirstInSequence &&
-            message.content.trim().length < 25,
-          isFirstInSequence,
+            paragraphIndex === paragraphs.length - 1 && paragraph.trim().length < 25,
+          isFirstInSequence:
+            paragraphIndex === 0 ? isFirstInSequence : false,
           type: 'message',
         });
       }
@@ -838,6 +845,7 @@ function CoachScreenContent() {
   const [isQueueSending, setIsQueueSending] = useState(false);
   const [isRecordingStarting, setIsRecordingStarting] = useState(false);
   const [isSessionSummaryVisible, setIsSessionSummaryVisible] = useState(false);
+  const [isSettingsHintVisible, setIsSettingsHintVisible] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
   const [listContentHeight, setListContentHeight] = useState(1);
@@ -964,6 +972,36 @@ function CoachScreenContent() {
       subscription.remove();
     };
   }, [attachments.length, composerValue, isStreaming, sessionCookie]);
+
+  useEffect(() => {
+    let active = true;
+    let hideTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    async function restoreSettingsHint() {
+      const storedValue = await AsyncStorage.getItem(SETTINGS_HINT_KEY);
+
+      if (!active || storedValue === 'seen') {
+        return;
+      }
+
+      setIsSettingsHintVisible(true);
+      await AsyncStorage.setItem(SETTINGS_HINT_KEY, 'seen');
+
+      hideTimeout = setTimeout(() => {
+        setIsSettingsHintVisible(false);
+      }, 4200);
+    }
+
+    void restoreSettingsHint();
+
+    return () => {
+      active = false;
+
+      if (hideTimeout) {
+        clearTimeout(hideTimeout);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -1387,6 +1425,23 @@ function CoachScreenContent() {
     }
   }
 
+  function handleOpenSettings() {
+    setIsSettingsHintVisible(false);
+    setIsSidebarOpen(false);
+    router.push('/(app)/settings');
+  }
+
+  function handleScrollToBottom() {
+    listRef.current?.scrollToOffset({
+      animated: true,
+      offset: 0,
+    });
+
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 180);
+  }
+
   async function submitMessage(options?: {
     attachments?: ComposerAttachment[];
     composerText?: string;
@@ -1752,40 +1807,78 @@ function CoachScreenContent() {
             style={styles.headerGradient}
           />
 
-          <Pressable
-            accessibilityHint="Long press to open settings."
-            accessibilityLabel="PeiPei header"
-            accessibilityRole="button"
-            delayLongPress={280}
-            onLongPress={() => {
-              setIsSidebarOpen(false);
-              router.push('/settings');
-            }}
-            style={({ pressed }) => [
-              styles.headerContent,
-              pressed && styles.headerTitlePressed,
-            ]}
-          >
-            <Animated.View
-              style={[
-                styles.headerAvatar,
-                {
-                  backgroundColor: isStreaming ? '#42D965' : '#2BB84D',
-                  opacity: avatarOpacity,
-                  transform: [{ scale: avatarScale }],
-                },
+          <View style={styles.headerContent}>
+            <Pressable
+              accessibilityHint="Long press to open settings."
+              accessibilityLabel="PeiPei header"
+              accessibilityRole="button"
+              delayLongPress={280}
+              onLongPress={handleOpenSettings}
+              style={({ pressed }) => [
+                styles.headerIdentity,
+                pressed && styles.headerTitlePressed,
               ]}
             >
-              <Text style={styles.headerAvatarText}>P</Text>
-            </Animated.View>
+              <Animated.View
+                style={[
+                  styles.headerAvatar,
+                  {
+                    backgroundColor: isStreaming ? '#42D965' : '#2BB84D',
+                    opacity: avatarOpacity,
+                    transform: [{ scale: avatarScale }],
+                  },
+                ]}
+              >
+                <Text style={styles.headerAvatarText}>P</Text>
+              </Animated.View>
 
-            <View style={styles.headerTitleBlock}>
-              <Text style={[styles.headerEyebrow, { color: timeAwareUi.coachLabelColor }]}>
-                COACH
-              </Text>
-              <Text style={styles.headerTitle}>pei·pei</Text>
+              <View style={styles.headerTitleBlock}>
+                <Text style={[styles.headerEyebrow, { color: timeAwareUi.coachLabelColor }]}>
+                  COACH
+                </Text>
+                <Text style={styles.headerTitle}>pei·pei</Text>
+              </View>
+            </Pressable>
+
+            <View style={styles.headerActions}>
+              <View style={styles.headerActionWrap}>
+                <Pressable
+                  accessibilityLabel="Open settings"
+                  accessibilityRole="button"
+                  onPress={handleOpenSettings}
+                  style={({ pressed }) => [
+                    styles.headerIconButton,
+                    pressed && styles.headerActionPressed,
+                  ]}
+                >
+                  <Feather color="#8E8E93" name="settings" size={20} strokeWidth={1.5} />
+                </Pressable>
+
+                {isSettingsHintVisible ? (
+                  <View pointerEvents="none" style={styles.settingsHintTooltip}>
+                    <Text style={styles.settingsHintText}>Settings</Text>
+                  </View>
+                ) : null}
+              </View>
+
+              <Pressable
+                accessibilityLabel="Jump to latest message"
+                accessibilityRole="button"
+                onPress={handleScrollToBottom}
+                style={({ pressed }) => [
+                  styles.headerIconButton,
+                  pressed && styles.headerActionPressed,
+                ]}
+              >
+                <Feather
+                  color="#8E8E93"
+                  name="chevron-down"
+                  size={20}
+                  strokeWidth={1.5}
+                />
+              </Pressable>
             </View>
-          </Pressable>
+          </View>
 
           <View style={styles.headerDivider} />
         </View>
@@ -2883,7 +2976,13 @@ const styles = StyleSheet.create({
   headerContent: {
     alignItems: 'center',
     flexDirection: 'row',
-    justifyContent: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  headerIdentity: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    minWidth: 0,
   },
   headerAvatar: {
     alignItems: 'center',
@@ -2901,6 +3000,44 @@ const styles = StyleSheet.create({
   },
   headerTitlePressed: {
     opacity: 0.92,
+  },
+  headerActions: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    marginLeft: 16,
+  },
+  headerActionWrap: {
+    position: 'relative',
+  },
+  headerIconButton: {
+    alignItems: 'center',
+    height: 36,
+    justifyContent: 'center',
+    opacity: 1,
+    width: 36,
+  },
+  headerActionPressed: {
+    opacity: 0.72,
+  },
+  settingsHintTooltip: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(28, 28, 30, 0.96)',
+    borderRadius: 10,
+    minWidth: 72,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    position: 'absolute',
+    right: -10,
+    top: 38,
+  },
+  settingsHintText: {
+    color: '#E8E8ED',
+    fontFamily: fonts.ui,
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 14,
+    textAlign: 'center',
   },
   headerTitleBlock: {
     marginLeft: 12,
@@ -3180,6 +3317,17 @@ const styles = StyleSheet.create({
     fontSize: 16.5,
     lineHeight: 24,
     paddingHorizontal: 0,
+    paddingVertical: 0,
+  },
+  inlineCodeText: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 10,
+    color: '#E8E8ED',
+    fontFamily: fonts.mono,
+    fontSize: 16.5,
+    lineHeight: 24,
+    overflow: 'hidden',
+    paddingHorizontal: 6,
     paddingVertical: 0,
   },
   messageFade: {
