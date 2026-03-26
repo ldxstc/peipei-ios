@@ -18,7 +18,8 @@
         "NSCameraUsageDescription": "PeiPei uses the camera so you can attach workout photos to your coach chat.",
         "NSMicrophoneUsageDescription": "PeiPei uses the microphone so you can record voice messages for your coach.",
         "NSPhotoLibraryAddUsageDescription": "PeiPei saves coach cards and shared images to your photo library when you ask.",
-        "NSPhotoLibraryUsageDescription": "PeiPei uses your photo library so you can attach images to your coach chat."
+        "NSPhotoLibraryUsageDescription": "PeiPei uses your photo library so you can attach images to your coach chat.",
+        "ITSAppUsesNonExemptEncryption": false
       },
       "bundleIdentifier": "com.peipei.app",
       "supportsTablet": true
@@ -43,24 +44,6 @@
     },
     "plugins": [
       "expo-router",
-      [
-        "expo-widgets",
-        {
-          "enablePushNotifications": true,
-          "groupIdentifier": "group.com.peipei.app",
-          "widgets": [
-            {
-              "name": "PeiPeiQuickView",
-              "displayName": "PeiPei Quick View",
-              "description": "Today's workout, race countdown, and the latest coach note.",
-              "supportedFamilies": [
-                "accessoryInline",
-                "accessoryRectangular"
-              ]
-            }
-          ]
-        }
-      ],
       [
         "expo-notifications",
         {
