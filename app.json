@@ -57,27 +57,7 @@
       "expo-audio"
     ],
     "extra": {
-      "router": {},
-      "eas": {
-        "build": {
-          "experimental": {
-            "ios": {
-              "appExtensions": [
-                {
-                  "targetName": "ExpoWidgetsTarget",
-                  "bundleIdentifier": "com.peipei.app.ExpoWidgetsTarget",
-                  "entitlements": {
-                    "com.apple.security.application-groups": [
-                      "group.com.peipei.app"
-                    ]
-                  }
-                }
-              ]
-            }
-          }
-        },
-        "projectId": "bc1270fa-4266-4ae4-97d6-02077d3f9e2b"
-      }
+      "router": {}
     },
     "owner": "ldxstc"
   }
