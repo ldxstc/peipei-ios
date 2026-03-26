@@ -57,7 +57,10 @@
       "expo-audio"
     ],
     "extra": {
-      "router": {}
+      "router": {},
+      "eas": {
+        "projectId": "bc1270fa-4266-4ae4-97d6-02077d3f9e2b"
+      }
     },
     "owner": "ldxstc"
   }
