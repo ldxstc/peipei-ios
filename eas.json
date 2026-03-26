@@ -1,6 +1,7 @@
 {
   "cli": {
-    "version": ">= 3.0.0"
+    "version": ">= 3.0.0",
+    "appVersionSource": "remote"
   },
   "build": {
     "preview": {
@@ -19,7 +20,7 @@
   "submit": {
     "production": {
       "ios": {
-        "appleId": "fengshi70@gmail.com",
+        "appleId": "ldxstc@gmail.com",
         "ascAppId": "6761196995",
         "appleTeamId": "MNB3V4MHFJ"
       }
