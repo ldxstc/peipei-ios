@@ -9,8 +9,10 @@ import {
 
 import {
   type AuthResult,
+  type SocialAuthInput,
   type AuthUser,
   signInWithEmail,
+  signInWithSocial,
   signUpWithEmail,
 } from '../lib/api';
 import {
@@ -37,6 +39,7 @@ type AuthContextValue = {
   status: AuthStatus;
   user: AuthUser | null;
   signIn: (email: string, password: string) => Promise<void>;
+  signInWithSocial: (input: SocialAuthInput) => Promise<void>;
   signUp: (name: string, email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
@@ -130,6 +133,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
     await finalizeAuth(authResult);
   }
 
+  async function signInWithSocialAccount(input: SocialAuthInput) {
+    const authResult = await signInWithSocial(input);
+    await finalizeAuth(authResult);
+  }
+
   async function signUp(name: string, email: string, password: string) {
     const authResult = await signUpWithEmail(name, email, password);
     await finalizeAuth(authResult, 'pending');
@@ -180,6 +188,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         status,
         user,
         signIn,
+        signInWithSocial: signInWithSocialAccount,
         signOut,
         signUp,
       }}

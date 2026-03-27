@@ -26,6 +26,15 @@ export type AuthResult = {
   user: AuthUser;
 };
 
+export type SocialAuthProvider = 'google' | 'apple';
+
+export type SocialAuthInput = {
+  accessToken?: string;
+  nonce?: string;
+  provider: SocialAuthProvider;
+  token: string;
+};
+
 export type CoachMessage = {
   id: string;
   role: 'user' | 'assistant';
@@ -600,6 +609,31 @@ export async function signUpWithEmail(
     email,
     password,
   });
+}
+
+export async function signInWithSocial(input: SocialAuthInput) {
+  const idToken: JsonRecord = {
+    token: input.token,
+  };
+
+  if (input.accessToken) {
+    idToken.accessToken = input.accessToken;
+  }
+
+  if (input.nonce) {
+    idToken.nonce = input.nonce;
+  }
+
+  const body: JsonRecord = {
+    provider: input.provider,
+    idToken,
+  };
+
+  if (input.accessToken) {
+    body.accessToken = input.accessToken;
+  }
+
+  return requestAuthResult('/api/auth/sign-in/social', body);
 }
 
 export async function getSession(sessionToken: string) {
