@@ -30,7 +30,6 @@ import {
 } from '../../src/lib/api';
 import { useAuth } from '../../src/providers/auth-provider';
 
-const PRICING_URL = 'https://peipei-run.com/pricing';
 const WEB_SETTINGS_URL = 'https://peipei-run.com/settings';
 
 export default function SettingsScreen() {
@@ -409,24 +408,8 @@ export default function SettingsScreen() {
             <SectionCard title="Billing">
               <DetailRow
                 label="Tier"
-                value={settingsQuery.data?.billing.tierLabel || 'Free'}
+                value={settingsQuery.data?.billing.isPro ? 'Pro tier' : 'Free tier'}
               />
-              {!settingsQuery.data?.billing.isPro ? (
-                <Pressable
-                  accessibilityLabel="Open pricing"
-                  accessibilityRole="button"
-                  onPress={() => {
-                    void openUrl(PRICING_URL);
-                  }}
-                  style={({ pressed }) => [
-                    styles.primaryButton,
-                    styles.sectionButton,
-                    pressed && styles.pressed,
-                  ]}
-                >
-                  <Text style={styles.primaryButtonText}>Upgrade</Text>
-                </Pressable>
-              ) : null}
             </SectionCard>
 
             <SectionCard title="Account">
