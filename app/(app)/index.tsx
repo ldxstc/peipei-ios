@@ -63,7 +63,6 @@ import {
   getCoachSidebar,
   streamCoachChat,
 } from '../../src/lib/api';
-import { syncPeiPeiWidgets } from '../../src/lib/peipei-widgets';
 import {
   saveRemoteImageToLibrary,
   shareRemoteImage,
@@ -1026,25 +1025,7 @@ function CoachScreenContent() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!coachSidebarQuery.data) {
-      return;
-    }
-
-    const daysToRaceLabel = coachSidebarQuery.data.goalProgress.countdown;
-    const daysToRaceNumber = Number(
-      daysToRaceLabel.match(/\d+/)?.[0] ?? Number.POSITIVE_INFINITY,
-    );
-
-    void syncPeiPeiWidgets({
-      daysToRace: daysToRaceLabel,
-      isRaceWeek: Number.isFinite(daysToRaceNumber) && daysToRaceNumber < 7,
-      lastCoachMessage: lastCoachMessage.slice(0, 60) || 'PeiPei is ready when you are.',
-      plannedWorkout: coachSidebarQuery.data.todayPlan.title,
-      trainingStatus: coachSidebarQuery.data.todayPlan.title,
-      workoutDistance: coachSidebarQuery.data.todayPlan.distance,
-    });
-  }, [coachSidebarQuery.data, lastCoachMessage]);
+  // Widget sync removed — no longer needed
 
   useEffect(() => {
     setComposerWakeOverride(false);
