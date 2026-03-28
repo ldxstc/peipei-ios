@@ -2,7 +2,7 @@
   "expo": {
     "name": "PeiPei",
     "slug": "peipei",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "scheme": "peipei",
@@ -13,7 +13,7 @@
       "backgroundColor": "#0F0E0C"
     },
     "ios": {
-      "buildNumber": "1",
+      "buildNumber": "2",
       "usesAppleSignIn": true,
       "infoPlist": {
         "NSCameraUsageDescription": "PeiPei uses the camera so you can attach workout photos to your coach chat.",
