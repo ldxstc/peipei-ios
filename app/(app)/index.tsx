@@ -1,74 +1,51 @@
-import { Feather, Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import * as Clipboard from 'expo-clipboard';
-import { LinearGradient } from 'expo-linear-gradient';
-import {
-  RecordingPresets,
-  requestRecordingPermissionsAsync,
-  setAudioModeAsync,
-  useAudioRecorder,
-  useAudioRecorderState,
-} from 'expo-audio';
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import { Stack, useRouter } from 'expo-router';
 import {
   Component,
-  memo,
   useEffect,
   useMemo,
   useRef,
   useState,
   type ErrorInfo,
-  type MutableRefObject,
   type ReactNode,
 } from 'react';
 import {
   ActivityIndicator,
-  AppState,
   Alert,
   Animated,
-  Easing,
+  AppState,
   FlatList,
   Image,
   Keyboard,
   KeyboardAvoidingView,
-  PanResponder,
   Platform,
   Pressable,
+  RefreshControl,
   StyleSheet,
   Text,
   TextInput,
-  useWindowDimensions,
   View,
-  type LayoutChangeEvent,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
-  type PanResponderInstance,
   type TextInputContentSizeChangeEventData,
-  type ViewToken,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { CoachDataSidebar } from '../../src/components/sidebar/coach-data-sidebar';
+import { PeiPeiLogoMark } from '../../src/components/branding/peipei-logo';
 import { colors, fonts, radii, spacing } from '../../src/design/tokens';
 import {
   type ChatAttachmentInput,
   type ChatRequestMessage,
-  type CoachSidebarData,
   type CoachMessage,
   ApiError,
   createLocalId,
   getCoachChat,
-  getCoachSidebar,
   streamCoachChat,
 } from '../../src/lib/api';
-import {
-  saveRemoteImageToLibrary,
-  shareRemoteImage,
-} from '../../src/lib/social-sharing';
-import { PeiPeiLogoMark } from '../../src/components/branding/peipei-logo';
 import {
   enqueueChatMessage,
   getQueuedChatMessageCount,
@@ -76,30 +53,18 @@ import {
   removeQueuedChatMessage,
   type OfflineQueuedAttachment,
 } from '../../src/lib/offline-queue';
+import {
+  saveRemoteImageToLibrary,
+  shareRemoteImage,
+} from '../../src/lib/social-sharing';
 import { useAuth } from '../../src/providers/auth-provider';
 
-type DensityTier = 'today' | 'yesterday' | 'this_week' | 'older';
-
-type ChatItem =
-  | {
-      animationDelay: number;
-      data: CoachMessage;
-      densityTier: DensityTier;
-      id: string;
-      isCascadeClosing: boolean;
-      isFirstInSequence: boolean;
-      type: 'message';
-    }
-  | { date: Date; id: string; type: 'day_label' }
-  | { id: string; type: 'loading_shimmer' }
-  | { id: string; type: 'typing_indicator' };
-
-type CoachErrorPresentation = {
-  description: string;
-  primaryActionLabel: string;
-  requiresSignOut?: boolean;
-  title: string;
-};
+const INPUT_MIN_HEIGHT = 44;
+const INPUT_MAX_HEIGHT = 108;
+const CLOSING_PHRASE_RE =
+  /关手机|明天见|去睡觉|晚安|good night|sleep well|rest up/i;
+const INLINE_TOKEN_PATTERN =
+  /(`[^`\n]+`|\*\*[^*]+\*\*|\*[^*\n]+\*|\d{1,2}:\d{2}\s*\/\s*(?:km|mi)|\d{2,3}\s*(?:bpm|次\/分)|\d+(?:\.\d+)?\s*(?:km|公里|K)(?![a-zA-Z]))/g;
 
 type ComposerAttachment = {
   id: string;
@@ -110,46 +75,10 @@ type ComposerAttachment = {
   uri: string;
 };
 
-type MessageRowProps = {
-  animationDelay: number;
-  coachBubbleColor: string;
-  densityTier: DensityTier;
-  isCascadeClosing: boolean;
-  isFirstInSequence: boolean;
-  isPending: boolean;
-  messageTextColor: string;
-  message: CoachMessage;
-  onCopyCaption: () => void;
-  onReply: (message: CoachMessage) => void;
-  runnerBubbleColor: string;
-  onSaveImage: () => void;
-  onShareImage: () => void;
-};
-
-type CoachContentModel = {
-  cardParagraphs: string[];
-  closingLine: string | null;
-  floatingHeadline: string | null;
-  previewText: string;
-  useSemanticCards: boolean;
-};
-
-const INITIAL_VISIBLE_MESSAGES = 40;
-const INPUT_MIN_HEIGHT = 44;
-const INPUT_MAX_HEIGHT = 120;
-const CASCADE_TIMESTAMP_STEP_MS = 30_000;
-const LOAD_MORE_BATCH = 20;
-const TABLET_BREAKPOINT = 960;
-const MESSAGE_ENTRY_STAGGER_MS = 800;
-const MESSAGE_ENTRY_EASING = Easing.bezier(0.25, 0.1, 0.25, 1);
-const SETTINGS_HINT_KEY = 'peipei.settings_hint_seen';
-const COACH_CLOSING_PHRASE_RE =
-  /关手机|明天见|去睡觉|晚安|good night|sleep well|rest up/i;
-const CODE_SPAN_RE = /^`([^`\n]+)`$/;
-const DATA_REFERENCE_PATTERN =
-  /(\d{1,2}:\d{2}\s*\/\s*(?:km|mi)|\d{2,3}\s*(?:bpm|次\/分)|\d+(?:\.\d+)?\s*(?:km|公里|K)(?![a-zA-Z]))/gi;
-const INLINE_TOKEN_PATTERN =
-  /(`[^`\n]+`|\*\*.+?\*\*|\*[^*\n]+\*|\d{1,2}:\d{2}\s*\/\s*(?:km|mi)|\d{2,3}\s*(?:bpm|次\/分)|\d+(?:\.\d+)?\s*(?:km|公里|K)(?![a-zA-Z]))/g;
+type ChatItem =
+  | { id: string; type: 'typing' }
+  | { id: string; type: 'day'; label: string }
+  | { id: string; isPending: boolean; message: CoachMessage; type: 'message' };
 
 function isNetworkFailure(error: unknown) {
   return (
@@ -158,10 +87,10 @@ function isNetworkFailure(error: unknown) {
   );
 }
 
-function getCoachErrorPresentation(error: unknown): CoachErrorPresentation {
+function getCoachErrorPresentation(error: unknown) {
   if (error instanceof ApiError && error.status === 401) {
     return {
-      description: 'Your session ended. Sign in again to continue the conversation.',
+      description: 'Your session ended. Sign in again to continue.',
       primaryActionLabel: 'Sign In Again',
       requiresSignOut: true,
       title: 'Session expired',
@@ -170,8 +99,7 @@ function getCoachErrorPresentation(error: unknown): CoachErrorPresentation {
 
   if (error instanceof ApiError && error.status >= 503) {
     return {
-      description:
-        'PeiPei is temporarily unavailable. Give the coach a minute and try again.',
+      description: 'PeiPei is temporarily unavailable. Try again in a minute.',
       primaryActionLabel: 'Try Again',
       title: 'Coach unavailable',
     };
@@ -179,32 +107,50 @@ function getCoachErrorPresentation(error: unknown): CoachErrorPresentation {
 
   if (isNetworkFailure(error)) {
     return {
-      description: 'Check your connection, then retry when you are back online.',
-      primaryActionLabel: 'Try Again',
+      description: 'You are offline. Messages can be queued and sent later.',
+      primaryActionLabel: 'OK',
       title: 'Network error',
-    };
-  }
-
-  if (error instanceof ApiError) {
-    return {
-      description: error.message,
-      primaryActionLabel: 'Try Again',
-      title: 'Unable to load coach chat',
     };
   }
 
   return {
     description:
-      error instanceof Error
-        ? error.message
-        : 'The conversation could not be loaded right now.',
+      error instanceof Error ? error.message : 'Unable to load coach chat.',
     primaryActionLabel: 'Try Again',
     title: 'Unable to load coach chat',
   };
 }
 
-function startOfDay(date: Date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+function stripDisplayMarkup(value: string) {
+  return value
+    .replace(/<tool_calls>[\s\S]*?<\/tool_calls>/gi, '')
+    .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
+    .replace(/<\/?tool_calls\s*\/?>/gi, '')
+    .replace(/<\/?tool_call\s*\/?>/gi, '')
+    .replace(/\[\[data:[^\]]+\]\]/g, '')  // strip data inline refs
+    .replace(/[▬▮▐█▌▍▎▏▇▆▅▄▃▂▁]+/g, '') // strip block chars (sparklines)
+    .trim();
+}
+
+function getGreeting(hour: number) {
+  if (hour >= 6 && hour < 12) {
+    return 'Good morning';
+  }
+  if (hour >= 12 && hour < 17) {
+    return 'Good afternoon';
+  }
+  if (hour >= 17 && hour < 22) {
+    return 'Good evening';
+  }
+  return 'Good night';
+}
+
+function formatFullDateLabel(date: Date) {
+  return date.toLocaleDateString('en-US', {
+    day: 'numeric',
+    month: 'long',
+    weekday: 'long',
+  });
 }
 
 function isSameCalendarDay(left: string | Date, right: string | Date) {
@@ -218,343 +164,142 @@ function isSameCalendarDay(left: string | Date, right: string | Date) {
   );
 }
 
-function getDensityTier(createdAt: Date, now: Date): DensityTier {
-  const diffInDays = Math.round(
-    (startOfDay(now).getTime() - startOfDay(createdAt).getTime()) / 86_400_000,
-  );
-  const startOfWeek = startOfDay(now);
-  startOfWeek.setDate(startOfWeek.getDate() - ((startOfWeek.getDay() + 6) % 7));
 
-  if (diffInDays <= 0) {
-    return 'today';
-  }
-
-  if (diffInDays === 1) {
-    return 'yesterday';
-  }
-
-  if (startOfDay(createdAt) >= startOfWeek) {
-    return 'this_week';
-  }
-
-  return 'older';
+function containsCjk(text: string) {
+  return /[\u3400-\u9FFF\uF900-\uFAFF]/.test(text);
 }
 
-function getSequenceSpacing(tier: DensityTier, isFirstInSequence: boolean) {
-  return isFirstInSequence ? 24 : 12;
+function getMetricColor(_value: string) {
+  return undefined;
 }
 
-function formatDayLabel(date: Date) {
-  const now = new Date();
-  const diffInDays = Math.round(
-    (startOfDay(now).getTime() - startOfDay(date).getTime()) / 86_400_000,
-  );
-  const startOfWeek = startOfDay(now);
-  startOfWeek.setDate(startOfWeek.getDate() - ((startOfWeek.getDay() + 6) % 7));
 
-  if (diffInDays <= 0) {
-    return 'TODAY';
+function extractMetrics(text: string): Array<{ label: string; value: string }> {
+  const metrics: Array<{ label: string; value: string }> = [];
+  const seen = new Set<string>();
+
+  // Pace
+  const paceMatches = text.matchAll(/(\d{1,2}:\d{2})\s*\/\s*(km|mi)/gi);
+  for (const m of paceMatches) {
+    const val = `${m[1]}/${m[2]}`;
+    if (!seen.has(val)) { metrics.push({ label: 'PACE', value: val }); seen.add(val); }
+    if (metrics.filter(x => x.label === 'PACE').length >= 2) break;
   }
 
-  if (diffInDays === 1) {
-    return 'YDAY';
+  // Distance
+  const distMatches = text.matchAll(/(\d+(?:\.\d+)?)\s*(km|公里|K)(?![a-zA-Z])/gi);
+  for (const m of distMatches) {
+    const val = `${m[1]}${m[2]}`;
+    if (!seen.has(val)) { metrics.push({ label: 'DIST', value: val }); seen.add(val); }
+    if (metrics.filter(x => x.label === 'DIST').length >= 2) break;
   }
 
-  if (startOfDay(date) >= startOfWeek) {
-    return date
-      .toLocaleDateString('en-US', { weekday: 'short' })
-      .toUpperCase();
+  // HR
+  const hrMatches = text.matchAll(/(\d{2,3})\s*(bpm|次\/分)/gi);
+  for (const m of hrMatches) {
+    const val = `${m[1]} ${m[2]}`;
+    if (!seen.has(val)) { metrics.push({ label: 'HR', value: val }); seen.add(val); }
+    if (metrics.filter(x => x.label === 'HR').length >= 2) break;
   }
 
-  return date
-    .toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    .toUpperCase();
+  // Return at most 3 most important
+  return metrics.slice(0, 3);
 }
 
-function formatStickyDayLabel(date: Date) {
-  const now = new Date();
-  const diffInDays = Math.round(
-    (startOfDay(now).getTime() - startOfDay(date).getTime()) / 86_400_000,
-  );
+function splitCoachMessage(text: string) {
+  const cleaned = stripDisplayMarkup(text);
+  const lines = cleaned.split('\n');
+  const firstLine = lines[0]?.trim() ?? '';
+  const rest = lines.slice(1).join('\n').trim();
 
-  if (diffInDays <= 0) {
-    return 'Today';
-  }
-
-  if (diffInDays === 1) {
-    return 'Yesterday';
-  }
-
-  return date.toLocaleDateString('en-US', {
-    day: 'numeric',
-    month: 'short',
-  });
-}
-
-function buildSessionSummary(sidebarData: CoachSidebarData | undefined) {
-  if (!sidebarData) {
-    return null;
-  }
-
-  const parts = [
-    sidebarData.goalProgress.title,
-    sidebarData.goalProgress.countdown,
-    sidebarData.goalProgress.detail,
-  ]
-    .map((part) => part.trim())
-    .filter(Boolean);
-
-  if (!parts.length) {
-    return null;
-  }
-
-  return `🏃 ${parts.join(' · ')}`;
-}
-
-function formatMessageTimestamp(date: Date) {
-  return date.toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
-
-function getCascadeTimestamp(createdAt: string, paragraphIndex: number) {
-  return new Date(
-    new Date(createdAt).getTime() + paragraphIndex * CASCADE_TIMESTAMP_STEP_MS,
-  ).toISOString();
-}
-
-function getTimeAwareUi(hour: number) {
-  const neutral = {
-    bodyTextColor: '#E8E8ED',
-    coachBubbleColor: 'rgba(28, 28, 30, 0.85)',
-    coachLabelColor: '#6E6E73',
-    runnerBubbleColor: 'rgba(28, 28, 30, 0.72)',
-  };
-
-  if (hour >= 6 && hour < 12) {
-    return {
-      ...neutral,
-      coachLabelColor: '#7D7462',
-    };
-  }
-
-  if (hour >= 22 || hour < 6) {
-    return {
-      ...neutral,
-      bodyTextColor: '#F5E6D3',
-      coachBubbleColor: 'rgba(25,18,10,0.9)',
-      runnerBubbleColor: 'rgba(25,18,10,0.82)',
-    };
-  }
-
-  return neutral;
-}
-
-function getMessageSummary(message: CoachMessage) {
-  if (message.messageType === 'social_post' && message.socialPost?.caption) {
-    return message.socialPost.caption;
-  }
-
-  return message.content;
-}
-
-function stripDisplayMarkup(value: string) {
-  return value
-    .replace(/<tool_calls>[\s\S]*?<\/tool_calls>/gi, '')
-    .replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, '')
-    .replace(/<\/?tool_calls\s*\/?>/gi, '')
-    .replace(/<\/?tool_call\s*\/?>/gi, '')
-    .replace(/^##+\s*/gm, '')
-    .trim();
-}
-
-function isDataReference(value: string) {
-  DATA_REFERENCE_PATTERN.lastIndex = 0;
-  return DATA_REFERENCE_PATTERN.test(value);
+  return { firstLine, rest };
 }
 
 function createInlineRuns(
   text: string,
-  baseStyle: object | object[],
   keyPrefix: string,
-  textColor?: string,
-): ReactNode[] {
-  return text
-    .split(INLINE_TOKEN_PATTERN)
-    .filter(Boolean)
-    .map((part, index) => {
-      const isCode = CODE_SPAN_RE.test(part);
-      const isBold = /^\*\*.+\*\*$/.test(part);
-      const isItalic = !isBold && /^\*[^*\n]+\*$/.test(part);
-      const cleanPart = isCode
-        ? part.slice(1, -1)
-        : isBold
-        ? part.slice(2, -2)
-        : isItalic
-          ? part.slice(1, -1)
-          : part;
+  tone: 'coach' | 'runner',
+) {
+  const color = tone === 'coach' ? colors.text : colors.textSecondary;
+  const segments = text.split(INLINE_TOKEN_PATTERN).filter(Boolean);
 
-      if (!cleanPart) {
-        return null;
-      }
-
-      if (isCode) {
-        return (
-          <Text
-            key={`${keyPrefix}-code-${index}`}
-            style={[
-              styles.inlineCodeText,
-              textColor ? { color: textColor } : null,
-            ]}
-          >
-            {cleanPart}
-          </Text>
-        );
-      }
-
-      if (isDataReference(cleanPart)) {
-        return (
-          <Text
-            key={`${keyPrefix}-data-${index}`}
-            style={[styles.dataReferenceText, textColor ? { color: textColor } : null]}
-          >
-            {cleanPart}
-          </Text>
-        );
-      }
-
-      if (isBold) {
-        return (
-          <Text key={`${keyPrefix}-bold-${index}`} style={[baseStyle, styles.inlineStrong]}>
-            {cleanPart}
-          </Text>
-        );
-      }
-
-      return (
-        <Text key={`${keyPrefix}-text-${index}`} style={baseStyle}>
-          {cleanPart}
-        </Text>
+  return segments.map((segment, index) => {
+    const isCode = /^`[^`\n]+`$/.test(segment);
+    const isBold = /^\*\*[^*]+\*\*$/.test(segment);
+    const isItalic = !isBold && /^\*[^*\n]+\*$/.test(segment);
+    const isDataRef =
+      !isCode &&
+      !isBold &&
+      !isItalic &&
+      /(\d{1,2}:\d{2}\s*\/\s*(?:km|mi)|\d{2,3}\s*(?:bpm|次\/分)|\d+(?:\.\d+)?\s*(?:km|公里|K)(?![a-zA-Z]))/i.test(
+        segment,
       );
-    });
-}
+    const value = isCode
+      ? segment.slice(1, -1)
+      : isBold
+        ? segment.slice(2, -2)
+        : isItalic
+          ? segment.slice(1, -1)
+          : segment;
 
-function renderMarkdown(
-  text: string,
-  tone: 'coach' | 'user',
-  textColor?: string,
-): ReactNode[] {
-  const cleaned = stripDisplayMarkup(text);
-  const paragraphs = cleaned.split(/\n\s*\n/).filter(Boolean);
-  const baseStyle = [
-    tone === 'coach' ? styles.coachMessageText : styles.runnerMessageText,
-    textColor ? { color: textColor } : null,
-  ];
-
-  return paragraphs.flatMap((paragraph, index) => {
-    const trimmed = paragraph.trim();
-    const isBullet = /^\*\s+/.test(trimmed);
-    const content = `${isBullet ? '• ' : ''}${trimmed
-      .replace(/^\*\s+/, '')
-      .replace(/^##+\s*/, '')
-      .split('\n')
-      .map((line) => line.trim())
-      .join('\n')}`;
-    const segments = createInlineRuns(
-      content,
-      baseStyle,
-      `paragraph-${index}`,
-      textColor,
+    return (
+      <Text
+        key={`${keyPrefix}-${index}`}
+        style={[
+          tone === 'coach' ? styles.coachBodyText : styles.runnerMessageText,
+          tone === 'coach' && containsCjk(value) ? styles.coachBodyTextCjk : null,
+          { color: isDataRef ? getMetricColor(segment) || color : color },
+          isBold ? styles.inlineStrong : null,
+          isItalic ? styles.inlineItalic : null,
+          isCode ? styles.inlineMono : null,
+        ]}
+      >
+        {value}
+      </Text>
     );
-
-    if (index === 0) {
-      return segments;
-    }
-
-    return [
-      <Text key={`markdown-break-${index}`} style={baseStyle}>
-        {'\n\n'}
-      </Text>,
-      ...segments,
-    ];
   });
 }
 
-function splitDisplayParagraphs(text: string) {
-  const cleaned = stripDisplayMarkup(text);
-  const usesDoubleNewlineParagraphs = /\n\s*\n/.test(cleaned);
-  const shouldSplitSingleNewlines =
-    !usesDoubleNewlineParagraphs &&
-    cleaned.length > 150 &&
-    cleaned.includes('\n');
-  const paragraphSource = usesDoubleNewlineParagraphs
-    ? cleaned.split(/\n\s*\n/)
-    : shouldSplitSingleNewlines
-      ? cleaned.split('\n')
-      : [cleaned];
+function buildChatItems(
+  messages: CoachMessage[],
+  pendingIds: Set<string>,
+  showTypingIndicator: boolean,
+) {
+  const items: ChatItem[] = [];
 
-  return paragraphSource
-    .map((paragraph) =>
-      paragraph
-        .trim()
-        .replace(/^##+\s*/gm, '')
-        .split('\n')
-        .map((line) => line.trim())
-        .join('\n')
-        .trim(),
-    )
-    .filter(Boolean);
-}
-
-function hasMultipleDisplayParagraphs(text: string) {
-  return splitDisplayParagraphs(text).length > 1;
-}
-
-function getCoachContentModel(text: string): CoachContentModel {
-  const paragraphs = splitDisplayParagraphs(text);
-
-  if (!paragraphs.length) {
-    return {
-      cardParagraphs: [],
-      closingLine: null,
-      floatingHeadline: null,
-      previewText: '',
-      useSemanticCards: false,
-    };
+  if (showTypingIndicator) {
+    items.push({ id: 'typing-indicator', type: 'typing' });
   }
 
-  const useSemanticCards = paragraphs.length >= 3;
+  messages.forEach((message, index) => {
+    const olderMessage = messages[index + 1];
+    items.push({
+      id: message.id,
+      isPending: pendingIds.has(message.id),
+      message,
+      type: 'message',
+    });
 
-  if (!useSemanticCards) {
-    return {
-      cardParagraphs: paragraphs,
-      closingLine: null,
-      floatingHeadline: null,
-      previewText: paragraphs.join('\n\n').trim(),
-      useSemanticCards: false,
-    };
-  }
+    if (!olderMessage || !isSameCalendarDay(message.createdAt, olderMessage.createdAt)) {
+      items.push({
+        id: `day-${message.id}`,
+        label: formatFullDateLabel(new Date(message.createdAt)),
+        type: 'day',
+      });
+    }
+  });
 
-  const cardParagraphs = [...paragraphs];
-  const firstParagraph = cardParagraphs[0] ?? '';
-  const floatingHeadline =
-    firstParagraph.length > 0 && firstParagraph.length <= 40
-      ? cardParagraphs.shift() ?? null
-      : null;
-  const lastParagraph = cardParagraphs[cardParagraphs.length - 1] ?? '';
-  const closingLine =
-    lastParagraph.length > 0 && lastParagraph.length < 25
-      ? cardParagraphs.pop() ?? null
-      : null;
+  return items;
+}
 
-  return {
-    cardParagraphs,
-    closingLine,
-    floatingHeadline,
-    previewText: [...cardParagraphs, closingLine].filter(Boolean).join('\n\n').trim(),
-    useSemanticCards: true,
-  };
+function mapAttachmentsForApi(
+  attachments: ComposerAttachment[],
+): ChatAttachmentInput[] {
+  return attachments.map((attachment) => ({
+    name: attachment.name,
+    type: attachment.mimeType,
+    uri: attachment.uri,
+  }));
 }
 
 function buildOptimisticContent(text: string, attachments: ComposerAttachment[]) {
@@ -563,7 +308,7 @@ function buildOptimisticContent(text: string, attachments: ComposerAttachment[])
   }
 
   if (attachments.length === 1) {
-    return attachments[0].kind === 'audio' ? 'Voice message' : 'Photo attachment';
+    return attachments[0]?.kind === 'image' ? 'Photo attachment' : 'Voice message';
   }
 
   if (attachments.length > 1) {
@@ -573,175 +318,31 @@ function buildOptimisticContent(text: string, attachments: ComposerAttachment[])
   return '';
 }
 
-function mapAttachmentsForApi(
-  attachments: ComposerAttachment[],
-): ChatAttachmentInput[] {
-  return (attachments ?? []).map((attachment) => ({
-    name: attachment.name,
-    type: attachment.mimeType,
-    uri: attachment.uri,
-  }));
-}
-
-function buildChatItems(
-  messagesDesc: CoachMessage[],
-  now: Date,
-  loadingMore: boolean,
-  showTypingIndicator: boolean,
-) {
-  const items: ChatItem[] = [];
-
-  if (showTypingIndicator) {
-    items.push({
-      id: 'typing-indicator',
-      type: 'typing_indicator',
-    });
-  }
-
-  (messagesDesc ?? []).forEach((message, index) => {
-    const olderMessage = messagesDesc[index + 1];
-    const densityTier = getDensityTier(new Date(message.createdAt), now);
-    const isFirstInSequence =
-      !olderMessage ||
-      olderMessage.role !== message.role ||
-      !isSameCalendarDay(message.createdAt, olderMessage.createdAt);
-
-    if (
-      message.role === 'assistant' &&
-      message.messageType !== 'social_post' &&
-      hasMultipleDisplayParagraphs(message.content)
-    ) {
-      const paragraphs = splitDisplayParagraphs(message.content);
-
-      for (let paragraphIndex = paragraphs.length - 1; paragraphIndex >= 0; paragraphIndex -= 1) {
-        const paragraph = paragraphs[paragraphIndex];
-
-        if (!paragraph) {
-          continue;
-        }
-
-        items.push({
-          animationDelay: paragraphIndex * MESSAGE_ENTRY_STAGGER_MS,
-          data: {
-            ...message,
-            content: paragraph,
-            createdAt: getCascadeTimestamp(message.createdAt, paragraphIndex),
-          },
-          densityTier,
-          id: `${message.id}-p${paragraphIndex}`,
-          isCascadeClosing:
-            paragraphIndex === paragraphs.length - 1 && paragraph.trim().length < 25,
-          isFirstInSequence:
-            paragraphIndex === 0 ? isFirstInSequence : false,
-          type: 'message',
-        });
-      }
-    } else {
-      items.push({
-        animationDelay: 0,
-        data: message,
-        densityTier,
-        id: message.id,
-        isCascadeClosing: false,
-        isFirstInSequence,
-        type: 'message',
-      });
-    }
-
-    if (!olderMessage || !isSameCalendarDay(message.createdAt, olderMessage.createdAt)) {
-      items.push({
-        date: new Date(message.createdAt),
-        id: `day-${message.id}`,
-        type: 'day_label',
-      });
-    }
-  });
-
-  if (loadingMore) {
-    items.push({
-      id: 'loading-shimmer',
-      type: 'loading_shimmer',
-    });
-  }
-
-  return items;
-}
-
-function buildSafeChatViewState({
-  chatData,
-  draftMessages,
-  isLoadingMore,
-  visibleMessageCount,
-  waitingForFirstToken,
-}: {
-  chatData: { hasMore?: boolean; messages?: CoachMessage[] } | undefined;
-  draftMessages: CoachMessage[];
-  isLoadingMore: boolean;
-  visibleMessageCount: number;
-  waitingForFirstToken: boolean;
-}) {
-  try {
-    const persistedMessages = Array.isArray(chatData?.messages)
-      ? chatData.messages
-      : [];
-    const safeDraftMessages = Array.isArray(draftMessages) ? draftMessages : [];
-    const mergedMessagesDesc = [...persistedMessages, ...safeDraftMessages].sort(
-      (left, right) =>
-        new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
-    );
-    const visibleMessagesDesc = mergedMessagesDesc.slice(0, visibleMessageCount);
-    const chatItems = buildChatItems(
-      visibleMessagesDesc,
-      new Date(),
-      isLoadingMore,
-      waitingForFirstToken,
-    );
-
-    return {
-      chatItems,
-      mergedMessagesDesc,
-      persistedMessages,
-      visibleMessagesDesc,
-    };
-  } catch {
-    return {
-      chatItems: [],
-      mergedMessagesDesc: [],
-      persistedMessages: [],
-      visibleMessagesDesc: [],
-    };
-  }
-}
-
 function createAttachmentFromPicker(
   asset: ImagePicker.ImagePickerAsset,
 ): ComposerAttachment {
   const mimeType = asset.mimeType || 'image/jpeg';
-  const fallbackExtension = mimeType.includes('png') ? 'png' : 'jpg';
+  const extension = mimeType.includes('png') ? 'png' : 'jpg';
 
   return {
     id: createLocalId('attachment'),
     kind: 'image',
     label: asset.fileName || 'Photo',
     mimeType,
-    name:
-      asset.fileName || `photo-${Date.now().toString(36)}.${fallbackExtension}`,
+    name: asset.fileName || `photo-${Date.now().toString(36)}.${extension}`,
     uri: asset.uri,
   };
 }
 
-function normalizeMetering(metering?: number) {
-  if (typeof metering !== 'number') {
-    return 0.12;
-  }
-
-  return Math.max(0.12, Math.min(1, (metering + 60) / 60));
-}
-
-function delay(ms: number) {
-  return new Promise<void>((resolve) => {
-    setTimeout(resolve, ms);
-  });
+function mapQueuedAttachments(attachments: OfflineQueuedAttachment[]) {
+  return attachments.map((attachment) => ({
+    id: attachment.id,
+    kind: attachment.kind,
+    label: attachment.label,
+    mimeType: attachment.mimeType,
+    name: attachment.name,
+    uri: attachment.uri,
+  }));
 }
 
 type CoachScreenErrorBoundaryProps = {
@@ -762,9 +363,7 @@ class CoachScreenErrorBoundary extends Component<
   };
 
   static getDerivedStateFromError(error: Error) {
-    return {
-      error,
-    };
+    return { error };
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
@@ -777,18 +376,8 @@ class CoachScreenErrorBoundary extends Component<
         <View style={styles.screen}>
           <View style={styles.errorState}>
             <Text style={styles.errorTitle}>Coach screen crashed</Text>
-            <Text style={styles.errorBody}>
-              Reload the conversation and try again.
-            </Text>
-            <Pressable
-              accessibilityLabel="Reload coach screen"
-              accessibilityRole="button"
-              onPress={this.props.onReload}
-              style={({ pressed }) => [
-                styles.retryButton,
-                pressed && styles.buttonPressed,
-              ]}
-            >
+            <Text style={styles.errorBody}>Reload the conversation and try again.</Text>
+            <Pressable onPress={this.props.onReload} style={styles.retryButton}>
               <Text style={styles.retryButtonText}>Reload</Text>
             </Pressable>
           </View>
@@ -820,60 +409,22 @@ function CoachScreenContent() {
   const router = useRouter();
   const inputRef = useRef<TextInput>(null);
   const listRef = useRef<FlatList<ChatItem>>(null);
-  const closingCeremonyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
-  const loadMoreInFlightRef = useRef(false);
   const queueFlushInFlightRef = useRef(false);
-  const scrollIndicatorFadeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
-  const avatarScale = useRef(new Animated.Value(1)).current;
-  const avatarOpacity = useRef(new Animated.Value(0.85)).current;
-  const closingCeremonyOpacity = useRef(new Animated.Value(0)).current;
-  const composerBarOpacity = useRef(new Animated.Value(1)).current;
-  const scrollIndicatorOpacity = useRef(new Animated.Value(0)).current;
-  const scrollIndicatorY = useRef(new Animated.Value(0)).current;
-  const shouldStopRecordingRef = useRef(false);
-  const { width } = useWindowDimensions();
-  const { sessionCookie, signOut } = useAuth();
-  const recorder = useAudioRecorder({
-    ...RecordingPresets.HIGH_QUALITY,
-    isMeteringEnabled: true,
-  });
-  const recorderState = useAudioRecorderState(recorder, 120);
+  const { sessionCookie, signOut, user } = useAuth();
 
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
-  const [closingCeremonyActive, setClosingCeremonyActive] = useState(false);
-  const [composerError, setComposerError] = useState<CoachErrorPresentation | null>(
-    null,
-  );
-  const [composerWakeOverride, setComposerWakeOverride] = useState(false);
+  const [composerError, setComposerError] = useState<string | null>(null);
   const [composerValue, setComposerValue] = useState('');
-  const [currentHour, setCurrentHour] = useState(() => new Date().getHours());
   const [draftMessages, setDraftMessages] = useState<CoachMessage[]>([]);
-  const [headerHeight, setHeaderHeight] = useState(0);
   const [inputHeight, setInputHeight] = useState(INPUT_MIN_HEIGHT);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isCompactHeader, setIsCompactHeader] = useState(false);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
   const [isQueueSending, setIsQueueSending] = useState(false);
-  const [isRecordingStarting, setIsRecordingStarting] = useState(false);
-  const [isSessionSummaryVisible, setIsSessionSummaryVisible] = useState(false);
-  const [isSettingsHintVisible, setIsSettingsHintVisible] = useState(false);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [listContentHeight, setListContentHeight] = useState(1);
-  const [listViewportHeight, setListViewportHeight] = useState(1);
-  const [meterSamples, setMeterSamples] = useState<number[]>([]);
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
   const [queuedMessageCount, setQueuedMessageCount] = useState(0);
   const [replyingTo, setReplyingTo] = useState<CoachMessage | null>(null);
-  const [stickyDayLabel, setStickyDayLabel] = useState(() =>
-    formatStickyDayLabel(new Date()),
-  );
-  const [typingStartedAt, setTypingStartedAt] = useState<number | null>(null);
-  const [visibleMessageCount, setVisibleMessageCount] = useState(
-    INITIAL_VISIBLE_MESSAGES,
-  );
   const [waitingForFirstToken, setWaitingForFirstToken] = useState(false);
 
   const chatQuery = useQuery({
@@ -883,93 +434,27 @@ function CoachScreenContent() {
     retry: false,
   });
 
-  const coachSidebarQuery = useQuery({
-    queryKey: ['coach-sidebar'],
-    queryFn: () => getCoachSidebar(sessionCookie ?? ''),
-    enabled: Boolean(sessionCookie),
-    retry: false,
-    staleTime: 60_000,
-  });
+  useEffect(() => {
+    const showSubscription = Keyboard.addListener('keyboardWillShow', () => {
+      setIsKeyboardVisible(true);
+    });
+    const hideSubscription = Keyboard.addListener('keyboardWillHide', () => {
+      setIsKeyboardVisible(false);
+    });
+    const showDidSubscription = Keyboard.addListener('keyboardDidShow', () => {
+      setIsKeyboardVisible(true);
+    });
+    const hideDidSubscription = Keyboard.addListener('keyboardDidHide', () => {
+      setIsKeyboardVisible(false);
+    });
 
-  const isTabletLayout = width >= TABLET_BREAKPOINT;
-  const isRecording = recorderState.isRecording;
-  const viewabilityConfig = useRef({
-    itemVisiblePercentThreshold: 25,
-  }).current;
-  const onViewableItemsChanged = useRef(
-    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
-      const sortedItems = [...viewableItems].sort(
-        (left, right) => (left.index ?? 0) - (right.index ?? 0),
-      );
-      const anchorItem = sortedItems
-        .reverse()
-        .map((entry) => entry.item as ChatItem)
-        .find((item) => item.type === 'day_label' || item.type === 'message');
-
-      if (!anchorItem) {
-        return;
-      }
-
-      if (anchorItem.type === 'day_label') {
-        setStickyDayLabel(formatStickyDayLabel(anchorItem.date));
-        return;
-      }
-
-      if (anchorItem.type === 'message') {
-        setStickyDayLabel(formatStickyDayLabel(new Date(anchorItem.data.createdAt)));
-      }
-    },
-  ).current;
-  const shouldShowSessionSummary =
-    listContentHeight <= listViewportHeight + 1 ? true : isSessionSummaryVisible;
-  const sessionSummary = useMemo(
-    () => buildSessionSummary(coachSidebarQuery.data),
-    [coachSidebarQuery.data],
-  );
-  const visibleSessionSummary = sessionSummary || '🏃 Week 5 · Boston 29 days';
-  const dailyViewTitle = coachSidebarQuery.data?.todayPlan.title || 'Daily view';
-  const dailyViewDetail =
-    coachSidebarQuery.data?.todayPlan.distance &&
-    coachSidebarQuery.data.todayPlan.distance !== '--'
-      ? coachSidebarQuery.data.todayPlan.distance
-      : coachSidebarQuery.data?.thisWeek.avgPace &&
-          coachSidebarQuery.data.thisWeek.avgPace !== '--'
-        ? coachSidebarQuery.data.thisWeek.avgPace
-        : 'Open';
-  const {
-    chatItems,
-    mergedMessagesDesc,
-    persistedMessages,
-  } = useMemo(
-    () =>
-      buildSafeChatViewState({
-        chatData: chatQuery.data,
-        draftMessages,
-        isLoadingMore,
-        visibleMessageCount,
-        waitingForFirstToken,
-      }),
-    [
-      chatQuery.data,
-      draftMessages,
-      isLoadingMore,
-      visibleMessageCount,
-      waitingForFirstToken,
-    ],
-  );
-  const lastCoachMessage =
-    mergedMessagesDesc.find(
-      (message) =>
-        message.role === 'assistant' && getMessageSummary(message).trim().length > 0,
-    )?.content ?? '';
-  const shouldRestComposer =
-    COACH_CLOSING_PHRASE_RE.test(stripDisplayMarkup(lastCoachMessage));
-  const isComposerResting = shouldRestComposer && !composerWakeOverride;
-  const timeAwareUi = useMemo(() => getTimeAwareUi(currentHour), [currentHour]);
-  const chatErrorPresentation =
-    chatQuery.error && !persistedMessages.length
-      ? getCoachErrorPresentation(chatQuery.error)
-      : null;
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+      showDidSubscription.remove();
+      hideDidSubscription.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (!sessionCookie) {
@@ -993,320 +478,95 @@ function CoachScreenContent() {
     return () => {
       subscription.remove();
     };
-  }, [attachments.length, composerValue, isStreaming, sessionCookie]);
+  }, [composerValue, attachments.length, isStreaming, sessionCookie]);
 
-  useEffect(() => {
-    let active = true;
-    let hideTimeout: ReturnType<typeof setTimeout> | null = null;
+  const mergedMessagesDesc = useMemo(() => {
+    const persistedMessages = Array.isArray(chatQuery.data?.messages)
+      ? chatQuery.data.messages
+      : [];
 
-    async function restoreSettingsHint() {
-      const storedValue = await AsyncStorage.getItem(SETTINGS_HINT_KEY);
-
-      if (!active || storedValue === 'seen') {
-        return;
-      }
-
-      setIsSettingsHintVisible(true);
-      await AsyncStorage.setItem(SETTINGS_HINT_KEY, 'seen');
-
-      hideTimeout = setTimeout(() => {
-        setIsSettingsHintVisible(false);
-      }, 4200);
-    }
-
-    void restoreSettingsHint();
-
-    return () => {
-      active = false;
-
-      if (hideTimeout) {
-        clearTimeout(hideTimeout);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentHour(new Date().getHours());
-    }, 60_000);
-
-    return () => {
-      clearInterval(interval);
-    };
-  }, []);
-
-  // Widget sync removed — no longer needed
-
-  useEffect(() => {
-    setComposerWakeOverride(false);
-  }, [lastCoachMessage]);
-
-  useEffect(() => {
-    if (!isComposerResting) {
-      if (closingCeremonyTimeoutRef.current) {
-        clearTimeout(closingCeremonyTimeoutRef.current);
-      }
-
-      setClosingCeremonyActive(false);
-      closingCeremonyOpacity.setValue(0);
-      Animated.timing(composerBarOpacity, {
-        duration: 180,
-        easing: Easing.out(Easing.ease),
-        toValue: 1,
-        useNativeDriver: true,
-      }).start();
-      return;
-    }
-
-    if (closingCeremonyTimeoutRef.current) {
-      clearTimeout(closingCeremonyTimeoutRef.current);
-    }
-
-    closingCeremonyTimeoutRef.current = setTimeout(() => {
-      Animated.timing(composerBarOpacity, {
-        duration: 1500,
-        easing: Easing.out(Easing.ease),
-        toValue: 0.2,
-        useNativeDriver: true,
-      }).start();
-
-      setClosingCeremonyActive(true);
-      Animated.timing(closingCeremonyOpacity, {
-        duration: 1000,
-        easing: Easing.out(Easing.ease),
-        toValue: 1,
-        useNativeDriver: true,
-      }).start();
-
-      setTimeout(() => {
-        listRef.current?.scrollToOffset({
-          animated: true,
-          offset: 20,
-        });
-      }, 120);
-    }, 1000);
-
-    return () => {
-      if (closingCeremonyTimeoutRef.current) {
-        clearTimeout(closingCeremonyTimeoutRef.current);
-      }
-    };
-  }, [closingCeremonyOpacity, composerBarOpacity, isComposerResting]);
-
-  useEffect(() => {
-    Animated.timing(avatarOpacity, {
-      duration: 220,
-      easing: Easing.out(Easing.ease),
-      toValue: isStreaming ? 1 : 0.85,
-      useNativeDriver: true,
-    }).start();
-
-    avatarScale.setValue(1);
-
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(avatarScale, {
-          duration: isStreaming ? 750 : 1250,
-          easing: Easing.inOut(Easing.ease),
-          toValue: isStreaming ? 1.2 : 1.12,
-          useNativeDriver: true,
-        }),
-        Animated.timing(avatarScale, {
-          duration: isStreaming ? 750 : 1250,
-          easing: Easing.inOut(Easing.ease),
-          toValue: 1,
-          useNativeDriver: true,
-        }),
-      ]),
+    return [...persistedMessages, ...draftMessages].sort(
+      (left, right) =>
+        new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
     );
+  }, [chatQuery.data?.messages, draftMessages]);
 
-    pulse.start();
+  const chatItems = useMemo(
+    () => buildChatItems(mergedMessagesDesc, pendingIds, waitingForFirstToken),
+    [mergedMessagesDesc, pendingIds, waitingForFirstToken],
+  );
 
-    return () => {
-      pulse.stop();
-    };
-  }, [avatarOpacity, avatarScale, isStreaming]);
+  const latestCoachMessage = mergedMessagesDesc.find(
+    (message) => message.role === 'assistant' && stripDisplayMarkup(message.content),
+  );
+  const shouldShowClosingNote = latestCoachMessage
+    ? CLOSING_PHRASE_RE.test(stripDisplayMarkup(latestCoachMessage.content))
+    : false;
+  const greeting = getGreeting(new Date().getHours());
+  const displayName = user?.name?.trim() || 'Runner';
+  const showEmptyState =
+    !chatQuery.isLoading &&
+    !chatQuery.error &&
+    mergedMessagesDesc.length === 0 &&
+    !waitingForFirstToken;
 
-  useEffect(() => {
-    if (isTabletLayout && isSidebarOpen) {
-      setIsSidebarOpen(false);
-    }
-  }, [isSidebarOpen, isTabletLayout]);
-
-  useEffect(() => {
-    if (isRecording && typeof recorderState.metering === 'number') {
-      setMeterSamples((current) => [
-        ...current.slice(-17),
-        normalizeMetering(recorderState.metering),
-      ]);
+  async function refreshQueuedMessageCount() {
+    if (!sessionCookie) {
+      setQueuedMessageCount(0);
       return;
     }
 
-    if (!isRecording && !isRecordingStarting && meterSamples.length) {
-      setMeterSamples([]);
-    }
-  }, [isRecording, isRecordingStarting, meterSamples.length, recorderState.metering]);
-
-  useEffect(() => {
-    return () => {
-      if (closingCeremonyTimeoutRef.current) {
-        clearTimeout(closingCeremonyTimeoutRef.current);
-      }
-
-      if (scrollIndicatorFadeTimeoutRef.current) {
-        clearTimeout(scrollIndicatorFadeTimeoutRef.current);
-      }
-
-      if (recorderState.isRecording) {
-        recorder.stop().catch(() => {
-          // Ignore recorder cleanup errors on screen unmount.
-        });
-      }
-    };
-  }, [recorder, recorderState.isRecording]);
-
-  async function handleSaveSocialImage(message: CoachMessage) {
-    if (!message.socialPost?.imageUrl) {
-      return;
-    }
-
-    await saveRemoteImageToLibrary(message.socialPost.imageUrl);
-    Alert.alert('Saved', 'The image was saved to Photos.');
+    const count = await getQueuedChatMessageCount();
+    setQueuedMessageCount(count);
   }
 
-  async function handleShareSocialImage(message: CoachMessage) {
-    if (!message.socialPost?.imageUrl) {
-      return;
-    }
-
-    await shareRemoteImage(message.socialPost.imageUrl);
-  }
-
-  async function handleCopyCaption(message: CoachMessage) {
-    await Clipboard.setStringAsync(getMessageSummary(message));
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }
-
-  function runAction(action: () => Promise<void>) {
-    action().catch((error: unknown) => {
-      const message =
-        error instanceof ApiError
-          ? error.message
-          : error instanceof Error
-            ? error.message
-            : 'The action could not be completed.';
-
-      Alert.alert('Unable to continue', message);
-    });
-  }
-
-  function handleHeaderLayout(event: LayoutChangeEvent) {
-    setHeaderHeight(event.nativeEvent.layout.height);
-  }
-
-  function handleComposerContentSizeChange(
-    event: NativeSyntheticEvent<TextInputContentSizeChangeEventData>,
-  ) {
-    const nextHeight = Math.min(
-      INPUT_MAX_HEIGHT,
-      Math.max(INPUT_MIN_HEIGHT, event.nativeEvent.contentSize.height + 12),
-    );
-    setInputHeight(nextHeight);
-  }
-
-  function wakeComposer() {
-    if (!isComposerResting) {
-      return;
-    }
-
-    composerBarOpacity.stopAnimation();
-    composerBarOpacity.setValue(1);
-    closingCeremonyOpacity.stopAnimation();
-    closingCeremonyOpacity.setValue(0);
-    setClosingCeremonyActive(false);
-    setComposerWakeOverride(true);
-  }
-
-  function handleReply(message: CoachMessage) {
-    setReplyingTo(message);
-    inputRef.current?.focus();
-  }
-
-  function clearReply() {
-    setReplyingTo(null);
-  }
-
-  function scheduleScrollIndicatorFade() {
-    if (scrollIndicatorFadeTimeoutRef.current) {
-      clearTimeout(scrollIndicatorFadeTimeoutRef.current);
-    }
-
-    scrollIndicatorFadeTimeoutRef.current = setTimeout(() => {
-      Animated.timing(scrollIndicatorOpacity, {
-        duration: 180,
-        easing: Easing.out(Easing.ease),
-        toValue: 0,
-        useNativeDriver: true,
-      }).start();
-    }, 1000);
-  }
-
-  function revealScrollIndicator() {
-    scrollIndicatorOpacity.stopAnimation((value) => {
-      if (value < 0.98) {
-        Animated.timing(scrollIndicatorOpacity, {
-          duration: 120,
-          easing: Easing.out(Easing.ease),
-          toValue: 1,
-          useNativeDriver: true,
-        }).start();
-      }
-    });
-    scheduleScrollIndicatorFade();
-  }
-
-  const scrollableDistance = Math.max(1, listContentHeight - listViewportHeight);
-  const scrollIndicatorHeight =
-    listContentHeight > listViewportHeight
-      ? Math.max(24, (listViewportHeight * listViewportHeight) / listContentHeight)
-      : 0;
-  const scrollIndicatorTravel = Math.max(0, listViewportHeight - scrollIndicatorHeight);
-
-  async function loadOlderMessages() {
-    if (loadMoreInFlightRef.current) {
-      return;
-    }
-
+  async function flushQueuedMessages() {
     if (
-      visibleMessageCount >= mergedMessagesDesc.length &&
-      !chatQuery.data?.hasMore
+      !sessionCookie ||
+      queueFlushInFlightRef.current ||
+      isStreaming ||
+      composerValue.trim() ||
+      attachments.length
     ) {
       return;
     }
 
-    loadMoreInFlightRef.current = true;
-    setIsLoadingMore(true);
-    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    queueFlushInFlightRef.current = true;
+    setIsQueueSending(true);
 
     try {
-      if (visibleMessageCount < mergedMessagesDesc.length) {
-        setVisibleMessageCount((current) =>
-          Math.min(current + LOAD_MORE_BATCH, mergedMessagesDesc.length),
-        );
-      } else {
-        const result = await chatQuery.refetch();
-        const nextCount = Array.isArray(result.data?.messages)
-          ? result.data.messages.length
-          : mergedMessagesDesc.length;
-        setVisibleMessageCount((current) =>
-          Math.min(current + LOAD_MORE_BATCH, nextCount),
-        );
+      const queuedMessages = await getQueuedChatMessages();
+      setQueuedMessageCount(queuedMessages.length);
+
+      for (const queuedMessage of queuedMessages) {
+        await submitMessage({
+          attachments: mapQueuedAttachments(queuedMessage.attachments),
+          composerText: queuedMessage.composerText,
+          optimisticContent: queuedMessage.optimisticContent,
+          queueOnNetworkError: false,
+        });
+        await removeQueuedChatMessage(queuedMessage.id);
       }
+    } catch {
+      // Keep the queue intact for the next foreground attempt.
     } finally {
-      setTimeout(() => {
-        loadMoreInFlightRef.current = false;
-        setIsLoadingMore(false);
-      }, 600);
+      queueFlushInFlightRef.current = false;
+      setIsQueueSending(false);
+      await refreshQueuedMessageCount();
+    }
+  }
+
+  async function handleRefresh() {
+    if (!sessionCookie) {
+      return;
+    }
+
+    setIsRefreshing(true);
+
+    try {
+      await Promise.all([chatQuery.refetch(), flushQueuedMessages()]);
+    } finally {
+      setIsRefreshing(false);
     }
   }
 
@@ -1320,7 +580,7 @@ function CoachScreenContent() {
       Alert.alert(
         'Permission needed',
         mode === 'camera'
-          ? 'Camera access is required to capture a photo.'
+          ? 'Camera access is required to take a photo.'
           : 'Photo library access is required to choose an image.',
       );
       return;
@@ -1343,104 +603,66 @@ function CoachScreenContent() {
       return;
     }
 
-    const nextAttachments = (result.assets ?? []).map(createAttachmentFromPicker);
-    setAttachments((current) => [...current, ...nextAttachments]);
+    setAttachments((current) => [
+      ...current,
+      ...result.assets.map(createAttachmentFromPicker),
+    ]);
     setComposerError(null);
-    inputRef.current?.focus();
   }
 
-  function handleAttachmentPicker() {
-    Alert.alert('Add attachment', 'Choose where the image should come from.', [
+  function showAttachmentMenu() {
+    Alert.alert('Add Photo', undefined, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Take Photo', onPress: () => void pickImage('camera') },
-      { text: 'Choose Photo', onPress: () => void pickImage('library') },
+      { text: 'Choose from Library', onPress: () => void pickImage('library') },
     ]);
   }
 
-  function removeAttachment(attachmentId: string) {
-    setAttachments((current) =>
-      current.filter((attachment) => attachment.id !== attachmentId),
+  function handleInputLongPress() {
+    showAttachmentMenu();
+  }
+
+  async function handleMicPress() {
+    Alert.alert(
+      'Voice notes',
+      'Voice capture is preserved for Phase 1, but this redesign uses a simplified composer. Send text or attach a photo for now.',
     );
   }
 
-  async function refreshQueuedMessageCount() {
-    if (!sessionCookie) {
-      setQueuedMessageCount(0);
+  async function handleCopyCaption(message: CoachMessage) {
+    await Clipboard.setStringAsync(stripDisplayMarkup(message.content));
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }
+
+  async function handleSaveSocialImage(message: CoachMessage) {
+    if (!message.socialPost?.imageUrl) {
       return;
     }
 
-    const count = await getQueuedChatMessageCount();
-    setQueuedMessageCount(count);
+    await saveRemoteImageToLibrary(message.socialPost.imageUrl);
+    Alert.alert('Saved', 'The image was saved to Photos.');
   }
 
-  function mapQueuedAttachmentsToComposer(
-    queuedAttachments: OfflineQueuedAttachment[],
-  ): ComposerAttachment[] {
-    return queuedAttachments.map((attachment) => ({
-      id: attachment.id,
-      kind: attachment.kind,
-      label: attachment.label,
-      mimeType: attachment.mimeType,
-      name: attachment.name,
-      uri: attachment.uri,
-    }));
-  }
-
-  async function flushQueuedMessages() {
-    if (
-      !sessionCookie ||
-      isStreaming ||
-      queueFlushInFlightRef.current ||
-      composerValue.trim().length > 0 ||
-      attachments.length > 0
-    ) {
+  async function handleShareSocialImage(message: CoachMessage) {
+    if (!message.socialPost?.imageUrl) {
       return;
     }
 
-    queueFlushInFlightRef.current = true;
+    await shareRemoteImage(message.socialPost.imageUrl);
+  }
 
+  async function handleMessageAction(action: () => Promise<void>) {
     try {
-      const queuedMessages = await getQueuedChatMessages();
-
-      if (!queuedMessages.length) {
-        setQueuedMessageCount(0);
-        return;
-      }
-
-      setQueuedMessageCount(queuedMessages.length);
-      setIsQueueSending(true);
-
-      for (const queuedMessage of queuedMessages) {
-        await submitMessage({
-          attachments: mapQueuedAttachmentsToComposer(queuedMessage.attachments),
-          composerText: queuedMessage.composerText,
-          optimisticContent: queuedMessage.optimisticContent,
-          queueOnNetworkError: false,
-        });
-        await removeQueuedChatMessage(queuedMessage.id);
-        await refreshQueuedMessageCount();
-      }
-    } catch {
-      // Leave any unsent messages in storage for the next foreground retry.
-    } finally {
-      queueFlushInFlightRef.current = false;
-      setIsQueueSending(false);
-      await refreshQueuedMessageCount();
+      await action();
+    } catch (error) {
+      const message =
+        error instanceof ApiError
+          ? error.message
+          : error instanceof Error
+            ? error.message
+            : 'Unable to continue.';
+      Alert.alert('Unable to continue', message);
     }
-  }
-
-  function handleOpenSettings() {
-    setIsSettingsHintVisible(false);
-    setIsSidebarOpen(false);
-    router.push('/(app)/settings');
-  }
-
-  function handleScrollToBottom() {
-    Keyboard.dismiss();
-    listRef.current?.scrollToOffset({
-      animated: true,
-      offset: 0,
-    });
   }
 
   async function submitMessage(options?: {
@@ -1451,30 +673,32 @@ function CoachScreenContent() {
   }) {
     const composerText = options?.composerText ?? composerValue;
     const outgoingAttachments = options?.attachments ?? attachments;
-    const text = composerText.trim();
+    const trimmedText = composerText.trim();
 
-    if (!sessionCookie || isStreaming || (!text && !outgoingAttachments.length)) {
+    if (!sessionCookie || isStreaming || (!trimmedText && !outgoingAttachments.length)) {
       return;
     }
 
-    const composerTextBeforeSend = composerValue;
-    const attachmentsBeforeSend = attachments;
-    const replyBeforeSend = replyingTo;
-    const inputHeightBeforeSend = inputHeight;
+    const existingMessages = Array.isArray(chatQuery.data?.messages)
+      ? chatQuery.data.messages
+      : [];
+    const queuedText = options?.composerText ?? composerValue;
+    const queuedAttachments = options?.attachments ?? attachments;
     const optimisticContent =
-      options?.optimisticContent ?? buildOptimisticContent(text, outgoingAttachments);
+      options?.optimisticContent ??
+      buildOptimisticContent(trimmedText, outgoingAttachments);
     const queueOnNetworkError = options?.queueOnNetworkError ?? true;
-    const now = new Date();
     const userMessage: CoachMessage = {
       content: optimisticContent,
-      createdAt: now.toISOString(),
+      createdAt: new Date().toISOString(),
       id: createLocalId('runner'),
       role: 'user',
     };
+    const assistantDraftId = createLocalId('coach');
     const outboundMessages: ChatRequestMessage[] = [
-      ...persistedMessages,
+      ...existingMessages,
       {
-        content: text,
+        content: trimmedText,
         createdAt: userMessage.createdAt,
         id: userMessage.id,
         role: 'user',
@@ -1494,59 +718,11 @@ function CoachScreenContent() {
     });
     setIsStreaming(true);
     setWaitingForFirstToken(true);
-    setTypingStartedAt(Date.now());
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      let paragraphBuffer = '';
-      let paragraphIndex = 0;
-      let hasDeliveredParagraph = false;
-
-      const appendAssistantParagraph = async (paragraph: string) => {
-        const trimmed = paragraph.trim();
-
-        if (!trimmed) {
-          return;
-        }
-
-        if (hasDeliveredParagraph) {
-          setWaitingForFirstToken(true);
-          setTypingStartedAt(Date.now());
-          await delay(400);
-        } else {
-          setWaitingForFirstToken(false);
-          await Haptics.notificationAsync(
-            Haptics.NotificationFeedbackType.Success,
-          );
-        }
-
-        const nextAssistantMessage: CoachMessage = {
-          content: trimmed,
-          createdAt: new Date(
-            now.getTime() + paragraphIndex * CASCADE_TIMESTAMP_STEP_MS,
-          ).toISOString(),
-          id: createLocalId('coach'),
-          role: 'assistant',
-        };
-
-        paragraphIndex += 1;
-        hasDeliveredParagraph = true;
-        setDraftMessages((current) => [...(current ?? []), nextAssistantMessage]);
-        setWaitingForFirstToken(false);
-        setTypingStartedAt(null);
-      };
-
-      const flushParagraphs = async (finalChunk: boolean) => {
-        const normalizedBuffer = paragraphBuffer.replace(/\r\n/g, '\n');
-        const segments = normalizedBuffer.split(/\n\s*\n/);
-        const completeParagraphs = finalChunk ? segments : segments.slice(0, -1);
-
-        paragraphBuffer = finalChunk ? '' : segments.at(-1) ?? '';
-
-        for (const paragraph of completeParagraphs) {
-          await appendAssistantParagraph(paragraph);
-        }
-      };
+      let assistantBuffer = '';
+      let receivedFirstToken = false;
 
       await streamCoachChat(
         sessionCookie,
@@ -1559,42 +735,51 @@ function CoachScreenContent() {
           messages: outboundMessages,
         },
         async (chunk) => {
-          paragraphBuffer += chunk;
-          await flushParagraphs(false);
+          assistantBuffer += chunk;
+
+          if (!receivedFirstToken) {
+            receivedFirstToken = true;
+            setWaitingForFirstToken(false);
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          }
+
+          setDraftMessages([
+            userMessage,
+            {
+              content: assistantBuffer,
+              createdAt: new Date().toISOString(),
+              id: assistantDraftId,
+              role: 'assistant',
+            },
+          ]);
         },
       );
 
-      await flushParagraphs(true);
-
       setPendingIds((current) => {
         const next = new Set(current);
         next.delete(userMessage.id);
         return next;
       });
       setWaitingForFirstToken(false);
-      setTypingStartedAt(null);
+      setDraftMessages([]);
       await chatQuery.refetch();
-      setDraftMessages([]);
     } catch (error) {
-      setDraftMessages([]);
       setPendingIds((current) => {
         const next = new Set(current);
         next.delete(userMessage.id);
         return next;
       });
       setWaitingForFirstToken(false);
-      setTypingStartedAt(null);
-      setComposerValue(composerTextBeforeSend);
-      setAttachments(attachmentsBeforeSend);
-      setReplyingTo(replyBeforeSend);
-      setInputHeight(inputHeightBeforeSend);
+      setDraftMessages([]);
+      setComposerValue(queuedText);
+      setAttachments(queuedAttachments);
 
-      const errorPresentation = getCoachErrorPresentation(error);
       const shouldQueueMessage = queueOnNetworkError && isNetworkFailure(error);
+      const presentation = getCoachErrorPresentation(error);
 
       if (shouldQueueMessage) {
         await enqueueChatMessage({
-          attachments: outgoingAttachments.map((attachment) => ({
+          attachments: queuedAttachments.map((attachment) => ({
             id: attachment.id,
             kind: attachment.kind,
             label: attachment.label,
@@ -1602,2214 +787,796 @@ function CoachScreenContent() {
             name: attachment.name,
             uri: attachment.uri,
           })),
-          composerText,
-          createdAt: now.toISOString(),
+          composerText: queuedText,
+          createdAt: userMessage.createdAt,
           id: createLocalId('queued'),
           optimisticContent,
         });
         await refreshQueuedMessageCount();
-
-        setComposerError({
-          description: 'Message saved. It will send automatically when you are back online.',
-          primaryActionLabel: 'OK',
-          title: 'Queued offline',
-        });
-      } else {
-        setComposerValue(composerTextBeforeSend);
-        setAttachments(attachmentsBeforeSend);
-        setReplyingTo(replyBeforeSend);
-        setInputHeight(inputHeightBeforeSend);
-      }
-
-      if (errorPresentation.requiresSignOut) {
-        Alert.alert(errorPresentation.title, errorPresentation.description);
+        setComposerError('Message saved offline. It will send when you reconnect.');
+      } else if (presentation.requiresSignOut) {
+        Alert.alert(presentation.title, presentation.description);
         await signOut();
         router.replace('/login');
       } else {
-        if (!shouldQueueMessage) {
-          setComposerError(errorPresentation);
-        }
+        setComposerError(presentation.description);
       }
     } finally {
       setIsStreaming(false);
     }
   }
 
-  async function startRecording() {
-    if (
-      isStreaming ||
-      isRecording ||
-      isRecordingStarting ||
-      composerValue.trim() ||
-      attachments.length
-    ) {
-      return;
-    }
-
-    shouldStopRecordingRef.current = false;
-    setComposerError(null);
-    setMeterSamples([]);
-    setIsRecordingStarting(true);
-
-    try {
-      const permission = await requestRecordingPermissionsAsync();
-
-      if (!permission.granted) {
-        throw new Error('Microphone access is required to record a voice message.');
-      }
-
-      await setAudioModeAsync({
-        allowsRecording: true,
-        interruptionMode: 'mixWithOthers',
-        playsInSilentMode: true,
-      });
-
-      await recorder.prepareToRecordAsync();
-      recorder.record();
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'Voice recording could not be started.';
-
-      Alert.alert('Unable to record', message);
-    } finally {
-      setIsRecordingStarting(false);
-
-      if (shouldStopRecordingRef.current) {
-        void stopRecording();
-      }
-    }
-  }
-
-  async function stopRecording() {
-    shouldStopRecordingRef.current = true;
-
-    if (!isRecording && !isRecordingStarting) {
-      return;
-    }
-
-    try {
-      await recorder.stop();
-      await setAudioModeAsync({
-        allowsRecording: false,
-        interruptionMode: 'mixWithOthers',
-        playsInSilentMode: true,
-      });
-      const uri = recorder.getStatus().url;
-
-      if (!uri) {
-        throw new Error('The recording file could not be created.');
-      }
-
-      const audioAttachment: ComposerAttachment = {
-        id: createLocalId('audio'),
-        kind: 'audio',
-        label: 'Voice message',
-        mimeType: 'audio/m4a',
-        name: `voice-${Date.now().toString(36)}.m4a`,
-        uri,
-      };
-
-      setMeterSamples([]);
-      await submitMessage({
-        attachments: [audioAttachment],
-        composerText: '',
-        optimisticContent: 'Voice message',
-      });
-    } catch (error) {
-      setMeterSamples([]);
-
-      if (
-        error instanceof Error &&
-        /E_AUDIO_NODATA/i.test(error.message)
-      ) {
-        return;
-      }
-
-      const message =
-        error instanceof Error
-          ? error.message
-          : 'Voice recording could not be sent.';
-
-      Alert.alert('Unable to record', message);
-    }
-  }
-
-  const renderChatItem = ({ item }: { item: ChatItem }) => {
-    if (item.type === 'day_label') {
-      return <DayLabelRow label={formatDayLabel(item.date)} />;
-    }
-
-    if (item.type === 'typing_indicator') {
+  function renderItem({ item }: { item: ChatItem }) {
+    if (item.type === 'day') {
       return (
-        <TypingIndicatorRow
-          bubbleColor={timeAwareUi.coachBubbleColor}
-          startedAt={typingStartedAt ?? Date.now()}
-        />
+        <View style={styles.daySeparator}>
+          <View style={styles.dayLine} />
+          <Text style={styles.dayLabel}>{item.label}</Text>
+          <View style={styles.dayLine} />
+        </View>
       );
     }
 
-    if (item.type === 'loading_shimmer') {
-      return <LoadingShimmerRow />;
+    if (item.type === 'typing') {
+      return <TypingIndicator />;
     }
 
     return (
       <MessageRow
-        animationDelay={item.animationDelay}
-        coachBubbleColor={timeAwareUi.coachBubbleColor}
-        densityTier={item.densityTier}
-        isCascadeClosing={item.isCascadeClosing}
-        isFirstInSequence={item.isFirstInSequence}
-        isPending={pendingIds.has(item.data.id)}
-        messageTextColor={timeAwareUi.bodyTextColor}
-        message={item.data}
-        onCopyCaption={() => runAction(() => handleCopyCaption(item.data))}
-        onReply={handleReply}
-        runnerBubbleColor={timeAwareUi.runnerBubbleColor}
-        onSaveImage={() => runAction(() => handleSaveSocialImage(item.data))}
-        onShareImage={() => runAction(() => handleShareSocialImage(item.data))}
+        isPending={item.isPending}
+        message={item.message}
+        onCopyCaption={() => handleMessageAction(() => handleCopyCaption(item.message))}
+        onReply={() => setReplyingTo(item.message)}
+        onSaveImage={() =>
+          handleMessageAction(() => handleSaveSocialImage(item.message))
+        }
+        onShareImage={() =>
+          handleMessageAction(() => handleShareSocialImage(item.message))
+        }
       />
     );
-  };
+  }
+
+  const chatError =
+    chatQuery.error && !chatQuery.data?.messages?.length
+      ? getCoachErrorPresentation(chatQuery.error)
+      : null;
 
   return (
-    <View style={[styles.screen, isTabletLayout && styles.tabletShell]}>
+    <View style={styles.screen}>
       <Stack.Screen options={{ headerShown: false }} />
-
-      <LinearGradient
-        colors={['rgba(0, 0, 0, 1)', 'rgba(0, 0, 0, 0)']}
-        pointerEvents="none"
-        style={styles.topStatusFade}
-      />
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={headerHeight}
-        style={[styles.conversationPane, isTabletLayout && styles.tabletConversation]}
+        keyboardVerticalOffset={insets.bottom > 0 ? 0 : 12}
+        style={styles.screen}
       >
         <View
-          onLayout={handleHeaderLayout}
           style={[
             styles.header,
             {
-              minHeight: insets.top + 88,
-              paddingTop: insets.top + 14,
+              paddingTop: insets.top + 12,
             },
           ]}
         >
-          <LinearGradient
-            colors={[
-              'rgba(0, 0, 0, 1)',
-              'rgba(0, 0, 0, 0.94)',
-              'rgba(0, 0, 0, 0)',
-            ]}
-            pointerEvents="none"
-            style={styles.headerGradient}
-          />
+          <View style={styles.headerTopRow}>
+            {isCompactHeader ? (
+              <Text style={styles.compactHeaderTitle}>PeiPei</Text>
+            ) : (
+              <View />
+            )}
 
-          <View style={styles.headerContent}>
             <Pressable
-              accessibilityHint="Long press to open settings."
-              accessibilityLabel="PeiPei header"
-              accessibilityRole="button"
-              delayLongPress={280}
-              onLongPress={handleOpenSettings}
-              style={({ pressed }) => [
-                styles.headerIdentity,
-                pressed && styles.headerTitlePressed,
-              ]}
+              accessibilityLabel="Open settings"
+              onPress={() => router.push('/(app)/settings')}
+              style={({ pressed }) => [styles.gearButton, pressed && styles.pressed]}
             >
-              <Animated.View
-                style={[
-                  styles.headerAvatar,
-                  {
-                    opacity: avatarOpacity,
-                    transform: [{ scale: avatarScale }],
-                  },
-                ]}
-              >
-                <PeiPeiLogoMark size={28} />
-              </Animated.View>
-
-              <View style={styles.headerTitleBlock}>
-                <Text style={[styles.headerEyebrow, { color: timeAwareUi.coachLabelColor }]}>
-                  COACH
-                </Text>
-                <Text style={styles.headerTitle}>PEIPEI</Text>
-              </View>
+              <Ionicons color={colors.text} name="settings-outline" size={22} />
             </Pressable>
+          </View>
 
-            <View style={styles.headerActions}>
-              <View style={styles.headerActionWrap}>
-                <Pressable
-                  accessibilityLabel="Open settings"
-                  accessibilityRole="button"
-                  onPress={handleOpenSettings}
-                  style={({ pressed }) => [
-                    styles.headerIconButton,
-                    pressed && styles.headerActionPressed,
-                  ]}
-                >
-                  <Feather color="#8E8E93" name="settings" size={20} strokeWidth={1.5} />
-                </Pressable>
+          {!isCompactHeader ? (
+            <>
+              <Text style={styles.greeting}>{`${greeting}, ${displayName}.`}</Text>
+              <Text style={styles.subheading}>Your coach is listening.</Text>
+            </>
+          ) : null}
+        </View>
 
-                {isSettingsHintVisible ? (
-                  <View pointerEvents="none" style={styles.settingsHintTooltip}>
-                    <Text style={styles.settingsHintText}>Settings</Text>
+        {chatError ? (
+          <View style={styles.errorState}>
+            <Text style={styles.errorTitle}>{chatError.title}</Text>
+            <Text style={styles.errorBody}>{chatError.description}</Text>
+            <Pressable
+              onPress={async () => {
+                if (chatError.requiresSignOut) {
+                  await signOut();
+                  router.replace('/login');
+                  return;
+                }
+
+                await chatQuery.refetch();
+              }}
+              style={styles.retryButton}
+            >
+              <Text style={styles.retryButtonText}>{chatError.primaryActionLabel}</Text>
+            </Pressable>
+          </View>
+        ) : showEmptyState ? (
+          <View style={styles.emptyState}>
+            <PeiPeiLogoMark size={48} />
+            <Text style={styles.emptyStateText}>Your coach is ready.</Text>
+          </View>
+        ) : (
+          <FlatList
+            ref={listRef}
+            contentContainerStyle={[
+              styles.listContent,
+              {
+                paddingBottom: 120,
+                paddingTop: 12,
+              },
+            ]}
+            data={chatItems}
+            inverted
+            keyExtractor={(item) => item.id}
+            keyboardDismissMode="interactive"
+            keyboardShouldPersistTaps="handled"
+            onScroll={(event: NativeSyntheticEvent<NativeScrollEvent>) => {
+              const nextCompact = event.nativeEvent.contentOffset.y > 44;
+              if (nextCompact !== isCompactHeader) {
+                setIsCompactHeader(nextCompact);
+              }
+            }}
+            refreshControl={
+              <RefreshControl
+                onRefresh={() => {
+                  void handleRefresh();
+                }}
+                refreshing={isRefreshing}
+                tintColor={colors.text}
+              />
+            }
+            renderItem={renderItem}
+            showsVerticalScrollIndicator={false}
+            ListHeaderComponent={
+              <View>
+                {shouldShowClosingNote ? (
+                  <View style={styles.closingNote}>
+                    <Text style={styles.closingNoteText}>Rest well. Your coach will be here tomorrow.</Text>
                   </View>
                 ) : null}
+                <View style={{ height: 80 }} />
               </View>
+            }
+            ListFooterComponent={<View style={{ height: 12 }} />}
+          />
+        )}
 
-              <Pressable
-                accessibilityLabel="Jump to latest message"
-                accessibilityRole="button"
-                onPress={handleScrollToBottom}
-                style={({ pressed }) => [
-                  styles.headerIconButton,
-                  pressed && styles.headerActionPressed,
-                ]}
-              >
-                <Feather
-                  color="#8E8E93"
-                  name="chevron-down"
-                  size={20}
-                  strokeWidth={1.5}
-                />
-              </Pressable>
-            </View>
-          </View>
-
-          {!isTabletLayout ? (
-            <Pressable
-              accessibilityLabel={
-                isSidebarOpen ? 'Close daily data view' : 'Open daily data view'
-              }
-              accessibilityRole="button"
-              onPress={() => setIsSidebarOpen((current) => !current)}
-              style={({ pressed }) => [
-                styles.phoneDailyViewButton,
-                isSidebarOpen && styles.dailyViewButtonActive,
-                pressed && styles.headerActionPressed,
-              ]}
-            >
-              <View style={styles.dailyViewButtonCopy}>
-                <Text style={styles.dailyViewButtonEyebrow}>TODAY</Text>
-                <Text numberOfLines={1} style={styles.dailyViewButtonTitle}>
-                  {dailyViewTitle}
-                </Text>
-              </View>
-              <View style={styles.dailyViewButtonMeta}>
-                <Text style={styles.dailyViewButtonMetaText}>{dailyViewDetail}</Text>
-                <Ionicons
-                  color={isSidebarOpen ? '#F5F5F7' : '#8E8E93'}
-                  name={isSidebarOpen ? 'close-outline' : 'chevron-forward'}
-                  size={16}
-                />
-              </View>
-            </Pressable>
-          ) : null}
-
-          <View style={styles.headerDivider} />
-        </View>
-
-        <Animated.View
-          pointerEvents="none"
+        <View
           style={[
-            styles.stickyDateContainer,
+            styles.composerShell,
             {
-              opacity: scrollIndicatorOpacity,
-              top: headerHeight + 8,
+              paddingBottom: Math.max(insets.bottom, 12),
             },
           ]}
         >
-          <View style={styles.stickyDatePill}>
-            <Text style={styles.stickyDatePillText}>{stickyDayLabel}</Text>
-          </View>
-        </Animated.View>
+          {queuedMessageCount > 0 || isQueueSending ? (
+            <Text style={styles.queueNotice}>
+              {isQueueSending
+                ? 'Sending queued messages...'
+                : `${queuedMessageCount} queued ${queuedMessageCount === 1 ? 'message' : 'messages'}`}
+            </Text>
+          ) : null}
 
-        {chatQuery.isLoading && !persistedMessages.length ? (
-          <ChatLoadingState />
-        ) : chatErrorPresentation ? (
-          <CoachErrorStateCard
-            errorPresentation={chatErrorPresentation}
-            onPrimaryAction={async () => {
-              if (chatErrorPresentation.requiresSignOut) {
-                await signOut();
-                router.replace('/login');
-                return;
-              }
-
-              await chatQuery.refetch();
-            }}
-            onSecondaryAction={
-              chatErrorPresentation.requiresSignOut
-                ? undefined
-                : async () => {
-                    await signOut();
-                    router.replace('/login');
-                  }
-            }
-          />
-        ) : (
-          <>
-            <View
-              onLayout={(event) => {
-                setListViewportHeight(event.nativeEvent.layout.height);
-              }}
-              style={styles.listShell}
-            >
-              <LinearGradient
-                colors={['rgba(0, 0, 0, 1)', 'rgba(0, 0, 0, 0)']}
-                pointerEvents="none"
-                style={styles.contentTopFade}
-              />
-
-              <FlatList
-                ref={listRef}
-                contentContainerStyle={styles.listContent}
-                data={chatItems}
-                inverted
-                initialNumToRender={20}
-                keyboardDismissMode="interactive"
-                keyboardShouldPersistTaps="handled"
-                keyExtractor={(item) => item.id}
-                maintainVisibleContentPosition={{
-                  autoscrollToTopThreshold: 10,
-                  minIndexForVisible: 1,
-                }}
-                maxToRenderPerBatch={10}
-                onEndReached={() => {
-                  void loadOlderMessages();
-                }}
-                onEndReachedThreshold={0.3}
-                onMomentumScrollBegin={revealScrollIndicator}
-                onMomentumScrollEnd={scheduleScrollIndicatorFade}
-                onScroll={Animated.event(
-                  [{ nativeEvent: { contentOffset: { y: scrollIndicatorY } } }],
-                  {
-                    listener: (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-                      const nextOffset = event.nativeEvent.contentOffset.y;
-                      const nextScrollableDistance = Math.max(
-                        1,
-                        listContentHeight - listViewportHeight,
-                      );
-                      const nextVisible =
-                        nextScrollableDistance <= 1 ||
-                        nextScrollableDistance - nextOffset <= 2;
-
-                      setIsSessionSummaryVisible((current) =>
-                        current === nextVisible ? current : nextVisible,
-                      );
-                      revealScrollIndicator();
-                    },
-                    useNativeDriver: false,
-                  },
-                )}
-                onScrollBeginDrag={revealScrollIndicator}
-                onScrollEndDrag={scheduleScrollIndicatorFade}
-                onContentSizeChange={(_, height) => {
-                  setListContentHeight(height);
-                }}
-                onViewableItemsChanged={onViewableItemsChanged}
-                removeClippedSubviews
-                renderItem={renderChatItem}
-                scrollEventThrottle={16}
-                showsVerticalScrollIndicator={false}
-                style={styles.list}
-                viewabilityConfig={viewabilityConfig}
-                windowSize={10}
-                ListFooterComponent={
-                  <SessionContinuitySlot
-                    summary={visibleSessionSummary}
-                    visible={shouldShowSessionSummary}
-                  />
-                }
-                ListHeaderComponent={
-                  closingCeremonyActive ? (
-                    <ClosingCeremonyRow opacity={closingCeremonyOpacity} />
-                  ) : null
-                }
-                ListEmptyComponent={
-                  <View style={styles.emptyState}>
-                    <Text style={styles.emptyTitle}>No coach messages yet</Text>
-                    <Text style={styles.emptyBody}>
-                      Start the conversation below and PeiPei will respond in real
-                      time.
-                    </Text>
-                  </View>
-                }
-              />
-
-              <LinearGradient
-                colors={['rgba(0, 0, 0, 0)', 'rgba(0, 0, 0, 1)']}
-                pointerEvents="none"
-                style={styles.listEdgeGradient}
-              />
-
-              {scrollIndicatorHeight > 0 ? (
-                <Animated.View
-                  pointerEvents="none"
-                  style={[
-                    styles.scrollIndicator,
-                    {
-                      height: scrollIndicatorHeight,
-                      opacity: scrollIndicatorOpacity,
-                      transform: [
-                        {
-                          translateY: scrollIndicatorY.interpolate({
-                            extrapolate: 'clamp',
-                            inputRange: [0, scrollableDistance],
-                            outputRange: [0, scrollIndicatorTravel],
-                          }),
-                        },
-                      ],
-                    },
-                  ]}
-                />
-              ) : null}
+          {replyingTo ? (
+            <View style={styles.replyBanner}>
+              <Text numberOfLines={1} style={styles.replyBannerText}>
+                Replying to: {stripDisplayMarkup(replyingTo.content)}
+              </Text>
+              <Pressable onPress={() => setReplyingTo(null)}>
+                <Ionicons color={colors.textSecondary} name="close" size={18} />
+              </Pressable>
             </View>
+          ) : null}
 
-            <View
-              style={[
-                styles.composerContainer,
-                {
-                  paddingBottom: insets.bottom + spacing.sm,
-                },
-              ]}
-            >
-              {isQueueSending ? (
-                <View style={styles.queueIndicator}>
-                  <ActivityIndicator color={colors.muted} size="small" />
-                  <Text style={styles.queueIndicatorText}>
-                    {queuedMessageCount > 0
-                      ? `Sending queued messages (${queuedMessageCount})...`
-                      : 'Sending queued messages...'}
+          {attachments.length ? (
+            <View style={styles.attachmentRow}>
+              {attachments.map((attachment) => (
+                <View key={attachment.id} style={styles.attachmentChip}>
+                  <Text numberOfLines={1} style={styles.attachmentChipText}>
+                    {attachment.label}
                   </Text>
+                  <Pressable
+                    onPress={() =>
+                      setAttachments((current) =>
+                        current.filter((item) => item.id !== attachment.id),
+                      )
+                    }
+                  >
+                    <Ionicons color={colors.textSecondary} name="close" size={16} />
+                  </Pressable>
                 </View>
-              ) : null}
+              ))}
+            </View>
+          ) : null}
 
-              {replyingTo ? (
-                <ReplyBar
-                  onClear={clearReply}
-                  preview={getMessageSummary(replyingTo)}
-                />
-              ) : null}
+          {composerError ? <Text style={styles.composerError}>{composerError}</Text> : null}
 
-              {attachments.length ? (
-                <AttachmentTray
-                  attachments={attachments}
-                  onRemove={removeAttachment}
-                />
-              ) : null}
+          <View style={styles.composerRow}>
+            {isKeyboardVisible ? (
+              <Pressable
+                accessibilityLabel="Add photo"
+                onPress={showAttachmentMenu}
+                style={({ pressed }) => [styles.sideAction, pressed && styles.pressed]}
+              >
+                <Ionicons color={colors.textSecondary} name="camera-outline" size={22} />
+              </Pressable>
+            ) : null}
 
-              {isRecording || isRecordingStarting ? (
-                <RecordingPreview
-                  isStarting={isRecordingStarting}
-                  meterSamples={meterSamples}
-                />
-              ) : null}
+            <Pressable onLongPress={handleInputLongPress} style={styles.inputWrap}>
+              <TextInput
+                ref={inputRef}
+                multiline
+                onChangeText={setComposerValue}
+                onContentSizeChange={(
+                  event: NativeSyntheticEvent<TextInputContentSizeChangeEventData>,
+                ) => {
+                  const nextHeight = Math.min(
+                    INPUT_MAX_HEIGHT,
+                    Math.max(
+                      INPUT_MIN_HEIGHT,
+                      event.nativeEvent.contentSize.height + 14,
+                    ),
+                  );
+                  setInputHeight(nextHeight);
+                }}
+                placeholder="Write to your coach"
+                placeholderTextColor={colors.textTertiary}
+                returnKeyType="default"
+                style={[styles.input, { height: inputHeight, paddingRight: 50 }]}
+                textAlignVertical="top"
+                value={composerValue}
+              />
 
-              {composerError ? (
-                <View style={styles.inlineErrorBanner}>
-                  <Text style={styles.inlineErrorTitle}>{composerError.title}</Text>
-                  <Text style={styles.inlineErrorBody}>
-                    {composerError.description}
-                  </Text>
-                </View>
-              ) : null}
-
-              <Animated.View style={[styles.inputBar, { opacity: composerBarOpacity }]}>
+              {composerValue.trim() ? (
                 <Pressable
-                  accessibilityHint="Opens camera and photo library options."
-                  accessibilityLabel="Add attachment"
-                  accessibilityRole="button"
-                  onPress={handleAttachmentPicker}
+                  accessibilityLabel="Send message"
+                  disabled={isStreaming}
+                  onPress={() => {
+                    void submitMessage();
+                  }}
                   style={({ pressed }) => [
-                    styles.attachButton,
-                    isComposerResting && styles.inputAccessoryResting,
-                    pressed && styles.iconControlPressed,
+                    styles.trailingAction,
+                    pressed && styles.pressed,
+                    isStreaming && styles.disabled,
                   ]}
                 >
-                  <Feather
-                    color="#636366"
-                    name="paperclip"
-                    size={24}
-                    strokeWidth={1.5}
-                  />
+                  <Ionicons color={colors.accent} name="arrow-up-circle" size={28} />
                 </Pressable>
-
-                <TextInput
-                  ref={inputRef}
-                  accessibilityHint="Composes a message to your running coach."
-                  accessibilityLabel="Message composer"
-                  blurOnSubmit={false}
-                  multiline
-                  onFocus={wakeComposer}
-                  onChangeText={(nextValue) => {
-                    setComposerError(null);
-                    setComposerValue(nextValue);
+              ) : !isKeyboardVisible ? (
+                <Pressable
+                  accessibilityLabel="Voice note"
+                  onPress={() => {
+                    void handleMicPress();
                   }}
-                  onContentSizeChange={handleComposerContentSizeChange}
-                  placeholder={
-                    isComposerResting ? '💤 Coach says rest...' : 'Message PEIPEI...'
-                  }
-                  placeholderTextColor="#48484A"
-                  returnKeyType="default"
-                  style={[
-                    styles.input,
-                    isComposerResting && styles.inputResting,
-                    { height: inputHeight },
-                  ]}
-                  value={composerValue}
-                />
-
-                {composerValue.trim() || attachments.length > 0 ? (
-                  <Pressable
-                    accessibilityHint="Sends your message to PeiPei."
-                    accessibilityLabel="Send message"
-                    accessibilityRole="button"
-                    disabled={isStreaming}
-                    onPress={() => {
-                      void submitMessage();
-                    }}
-                    style={({ pressed }) => [
-                      styles.sendButton,
-                      isComposerResting && styles.inputAccessoryResting,
-                      pressed && styles.buttonPressed,
-                      isStreaming && styles.buttonDisabled,
-                    ]}
-                  >
-                    {isStreaming ? (
-                      <ActivityIndicator color={colors.text} size="small" />
-                    ) : (
-                      <Feather
-                        color="#636366"
-                        name="arrow-up"
-                        size={24}
-                        strokeWidth={1.5}
-                      />
-                    )}
-                  </Pressable>
-                ) : (
-                  <Pressable
-                    accessibilityHint="Hold to record a voice message."
-                    accessibilityLabel="Record voice message"
-                    accessibilityRole="button"
-                    delayLongPress={220}
-                    onLongPress={() => {
-                      void startRecording();
-                    }}
-                    onPressOut={() => {
-                      void stopRecording();
-                    }}
-                    style={({ pressed }) => [
-                      styles.micButton,
-                      isComposerResting && styles.inputAccessoryResting,
-                      pressed && styles.iconControlPressed,
-                      (pressed || isRecording || isRecordingStarting) &&
-                        styles.micButtonActive,
-                    ]}
-                  >
-                    <Feather
-                      color="#636366"
-                      name="mic"
-                      size={24}
-                      strokeWidth={1.5}
-                    />
-                  </Pressable>
-                )}
-              </Animated.View>
-            </View>
-          </>
-        )}
-      </KeyboardAvoidingView>
-
-      {isTabletLayout ? (
-        <View style={styles.tabletSidebar}>
-          <CoachDataSidebar
-            bottomInset={insets.bottom}
-            isOpen
-            onClose={() => undefined}
-            onOpen={() => undefined}
-            sessionCookie={sessionCookie}
-            topInset={insets.top}
-            variant="docked"
-          />
+                  style={({ pressed }) => [styles.trailingAction, pressed && styles.pressed]}
+                >
+                  <Ionicons color={colors.textSecondary} name="mic-outline" size={22} />
+                </Pressable>
+              ) : null}
+            </Pressable>
+          </View>
         </View>
-      ) : (
-        <CoachDataSidebar
-          bottomInset={insets.bottom}
-          isOpen={isSidebarOpen}
-          onClose={() => setIsSidebarOpen(false)}
-          onOpen={() => setIsSidebarOpen(true)}
-          sessionCookie={sessionCookie}
-          topInset={insets.top}
-          variant="overlay"
-        />
-      )}
+      </KeyboardAvoidingView>
     </View>
   );
 }
 
-const DayLabelRow = memo(function DayLabelRow({ label }: { label: string }) {
-  return (
-    <View style={styles.dayLabelRow}>
-      <Text style={styles.dayLabelText}>{label}</Text>
-    </View>
-  );
-});
+type MessageRowProps = {
+  isPending: boolean;
+  message: CoachMessage;
+  onCopyCaption: () => void;
+  onReply: () => void;
+  onSaveImage: () => void;
+  onShareImage: () => void;
+};
 
-const SessionContinuityRow = memo(function SessionContinuityRow({
-  summary,
-}: {
-  summary: string;
-}) {
-  return (
-    <View style={styles.sessionSummaryRow}>
-      <Text style={styles.sessionSummaryText}>{summary}</Text>
-    </View>
-  );
-});
-
-const SessionContinuitySlot = memo(function SessionContinuitySlot({
-  summary,
-  visible,
-}: {
-  summary: string;
-  visible: boolean;
-}) {
-  return visible ? (
-    <SessionContinuityRow summary={summary} />
-  ) : (
-    <View style={styles.sessionSummarySpacer} />
-  );
-});
-
-const ClosingCeremonyRow = memo(function ClosingCeremonyRow({
-  opacity,
-}: {
-  opacity: Animated.Value;
-}) {
-  return (
-    <Animated.View style={[styles.closingCeremonyRow, { opacity }]}>
-      <Text style={styles.closingCeremonyText}>— 教练已离线 · 明天继续 —</Text>
-    </Animated.View>
-  );
-});
-
-const CoachIndicator = memo(function CoachIndicator() {
-  return (
-    <LinearGradient
-      colors={['rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.02)']}
-      end={{ x: 1, y: 0.5 }}
-      start={{ x: 0, y: 0.5 }}
-      style={styles.coachIndicator}
-    />
-  );
-});
-
-const CoachMessageContent = memo(function CoachMessageContent({
-  content,
-  isClamped,
-  timestampLabel,
-}: {
-  content: string;
-  isClamped: boolean;
-  timestampLabel: string;
-}) {
-  const model = useMemo(() => getCoachContentModel(content), [content]);
-
-  if (isClamped || !model.useSemanticCards) {
-    return (
-      <View style={styles.messageTextContainer}>
-        {model.floatingHeadline ? (
-          <Text style={styles.coachFloatingHeadline}>
-            {createInlineRuns(
-              model.floatingHeadline,
-              styles.coachFloatingHeadline,
-              'coach-headline',
-            )}
-          </Text>
-        ) : null}
-
-        {model.previewText ? (
-          <Text numberOfLines={4} style={styles.coachMessageText}>
-            {renderMarkdown(model.previewText, 'coach')}
-          </Text>
-        ) : null}
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.messageTextContainer}>
-      {model.floatingHeadline ? (
-        <Text style={styles.coachFloatingHeadline}>
-          {createInlineRuns(
-            model.floatingHeadline,
-            styles.coachFloatingHeadline,
-            'coach-headline',
-          )}
-        </Text>
-      ) : null}
-
-      <View style={styles.coachCardStack}>
-        {model.cardParagraphs.map((paragraph, index) => {
-          const isFirstCard = index === 0;
-          const isLastCard = index === model.cardParagraphs.length - 1;
-
-          return (
-            <View
-              key={`coach-paragraph-${index}`}
-              style={[
-                styles.coachMiniCard,
-                isFirstCard && styles.coachMiniCardFirst,
-                !isLastCard && styles.coachMiniCardSpaced,
-              ]}
-            >
-              {isFirstCard ? (
-                <Text style={styles.cardTimestampText}>{timestampLabel}</Text>
-              ) : null}
-
-              <Text
-                style={[
-                  styles.coachMessageText,
-                  isFirstCard &&
-                    !model.floatingHeadline &&
-                    styles.coachLeadCardText,
-                ]}
-              >
-                {renderMarkdown(paragraph, 'coach')}
-              </Text>
-            </View>
-          );
-        })}
-      </View>
-
-      {model.closingLine ? (
-        <Text style={styles.coachPostscriptText}>
-          {renderMarkdown(model.closingLine, 'coach')}
-        </Text>
-      ) : null}
-    </View>
-  );
-});
-
-const MessageRow = memo(function MessageRow({
-  animationDelay,
-  coachBubbleColor,
-  densityTier,
-  isCascadeClosing,
-  isFirstInSequence,
+function MessageRow({
   isPending,
-  messageTextColor,
   message,
   onCopyCaption,
   onReply,
-  runnerBubbleColor,
   onSaveImage,
   onShareImage,
 }: MessageRowProps) {
-  const translateX = useRef(new Animated.Value(0)).current;
-  const replyTriggeredRef = useRef(false);
-  const entryOpacity = useRef(new Animated.Value(0)).current;
-  const entryTranslateY = useRef(new Animated.Value(20)).current;
-  const isUser = message.role === 'user';
-  const messageBody = getMessageSummary(message);
-  const rowPanResponder = useMemo(
-    () =>
-      createReplyPanResponder({
-        message,
-        onReply,
-        replyTriggeredRef,
-        translateX,
-      }),
-    [message, onReply, translateX],
-  );
-  const timestampLabel = formatMessageTimestamp(new Date(message.createdAt));
+  const cleanedContent = stripDisplayMarkup(message.content);
 
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(entryOpacity, {
-        delay: animationDelay,
-        duration: 350,
-        easing: MESSAGE_ENTRY_EASING,
-        toValue: isPending ? 0.6 : 1,
-        useNativeDriver: true,
-      }),
-      Animated.timing(entryTranslateY, {
-        delay: animationDelay,
-        duration: 350,
-        easing: MESSAGE_ENTRY_EASING,
-        toValue: 0,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [animationDelay, entryOpacity, entryTranslateY, isPending]);
+  if (message.role === 'user') {
+    return (
+      <Pressable onLongPress={onReply} style={styles.runnerRow}>
+        <View style={[styles.runnerBubble, isPending && styles.pendingMessage]}>
+          <Text style={styles.runnerMessageText}>
+            {cleanedContent}
+          </Text>
+        </View>
+      </Pressable>
+    );
+  }
+
+  const { firstLine, rest } = splitCoachMessage(cleanedContent);
+  const coachUsesSystemFont = containsCjk(cleanedContent);
 
   return (
-    <Animated.View
-      style={[
-        styles.messageRow,
-        {
-          marginTop: getSequenceSpacing(densityTier, isFirstInSequence),
-          opacity: entryOpacity,
-          transform: [{ translateX }, { translateY: entryTranslateY }],
-        },
-      ]}
-      {...rowPanResponder.panHandlers}
-    >
-      <View
-        style={[
-          styles.messageBodyColumn,
-          isUser ? styles.runnerColumn : styles.coachColumn,
-        ]}
-      >
-        <Pressable
-          accessibilityLabel={`${isUser ? 'Your' : 'Coach'} message. ${messageBody}`}
-          accessibilityRole="button"
-          delayLongPress={400}
-          onLongPress={() => {
-            void onCopyCaption();
-          }}
-          style={[
-            styles.messageBubble,
-            isUser ? styles.runnerBubble : styles.coachBubble,
-            {
-              backgroundColor: isUser ? runnerBubbleColor : coachBubbleColor,
-            },
-            !isUser && isCascadeClosing && styles.closingBubbleAccent,
-            message.messageType === 'social_post' && styles.socialBubble,
-          ]}
-        >
-          {message.messageType === 'social_post' && message.socialPost ? (
-            <>
-              <SocialPostCard
-                caption={message.socialPost.caption}
-                imageUrl={message.socialPost.imageUrl}
-                onCopyCaption={onCopyCaption}
-                onSaveImage={onSaveImage}
-                onShareImage={onShareImage}
-              />
+    <Pressable onLongPress={onReply} style={styles.coachRow}>
+      {message.messageType === 'social_post' && message.socialPost?.imageUrl ? (
+        <View style={styles.socialPostCard}>
+          <Image source={{ uri: message.socialPost.imageUrl }} style={styles.socialImage} />
+          <View style={styles.socialActions}>
+            <Pressable onPress={onSaveImage} style={styles.socialAction}>
+              <Text style={styles.socialActionText}>Save</Text>
+            </Pressable>
+            <Pressable onPress={onShareImage} style={styles.socialAction}>
+              <Text style={styles.socialActionText}>Share</Text>
+            </Pressable>
+            <Pressable onPress={onCopyCaption} style={styles.socialAction}>
+              <Text style={styles.socialActionText}>Copy</Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
 
-              {!isPending ? (
-                <Text style={styles.bubbleTimestampText}>
-                  {timestampLabel}
-                </Text>
-              ) : null}
-            </>
-          ) : (
-            <View style={styles.messageTextContainer}>
-              <View style={styles.markdownBlock}>
-                <Text
-                  style={[
-                    isUser
-                      ? [styles.runnerMessageText, { color: messageTextColor }]
-                      : [styles.coachMessageText, { color: messageTextColor }],
-                    !isUser && isCascadeClosing && styles.coachClosingMessageText,
-                  ]}
-                >
-                  {renderMarkdown(
-                    message.content,
-                    isUser ? 'user' : 'coach',
-                    messageTextColor,
-                  )}
-                </Text>
-              </View>
+      {firstLine ? (
+        <Text style={[styles.coachHeadlineText, coachUsesSystemFont && styles.coachHeadlineTextCjk]}>
+          {createInlineRuns(firstLine, `${message.id}-headline`, 'coach')}
+        </Text>
+      ) : null}
 
-              {!isPending ? (
-                <Text style={styles.bubbleTimestampText}>
-                  {timestampLabel}
-                </Text>
-              ) : null}
-            </View>
-          )}
-        </Pressable>
-      </View>
-    </Animated.View>
-  );
-}, areMessageRowPropsEqual);
-
-const SocialPostCard = memo(function SocialPostCard({
-  caption,
-  imageUrl,
-  onCopyCaption,
-  onSaveImage,
-  onShareImage,
-}: {
-  caption: string;
-  imageUrl: string;
-  onCopyCaption: () => void;
-  onSaveImage: () => void;
-  onShareImage: () => void;
-}) {
-  return (
-    <View style={styles.socialCard}>
-      <Image source={{ uri: imageUrl }} style={styles.socialImage} />
-      <Text style={styles.socialCaption}>{caption}</Text>
-      <View style={styles.socialActions}>
-        <ActionPill label="Copy Caption" onPress={onCopyCaption} />
-        <ActionPill label="Save Image" onPress={onSaveImage} />
-        <ActionPill label="Share" onPress={onShareImage} />
-      </View>
-    </View>
-  );
-});
-
-function ActionPill({
-  label,
-  onPress,
-}: {
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityLabel={label}
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.socialActionButton,
-        pressed && styles.buttonPressed,
-      ]}
-    >
-      <Text style={styles.socialActionText}>{label}</Text>
+      {rest ? (
+        <Text style={[styles.coachBodyText, coachUsesSystemFont && styles.coachBodyTextCjk]}>
+          {createInlineRuns(rest, `${message.id}-body`, 'coach')}
+        </Text>
+      ) : null}
     </Pressable>
   );
 }
 
-const TypingIndicatorRow = memo(function TypingIndicatorRow({
-  bubbleColor,
-  startedAt,
-}: {
-  bubbleColor: string;
-  startedAt: number;
-}) {
-  const [elapsed, setElapsed] = useState(0);
+function TypingIndicator() {
+  const dotOne = useRef(new Animated.Value(0.45)).current;
+  const dotTwo = useRef(new Animated.Value(0.45)).current;
+  const dotThree = useRef(new Animated.Value(0.45)).current;
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setElapsed(Date.now() - startedAt);
-    }, 240);
-
-    return () => {
-      clearInterval(interval);
-    };
-  }, [startedAt]);
-
-  const activeCount = elapsed >= 5000 ? 3 : elapsed >= 2000 ? 2 : 1;
-
-  return (
-    <View style={[styles.messageRow, { marginTop: spacing.md }]}>
-      <View style={styles.messageBodyColumn}>
-        <View
-          style={[
-            styles.messageBubble,
-            styles.coachBubble,
-            styles.typingBubble,
-            { backgroundColor: bubbleColor },
-          ]}
-        >
-          <View style={styles.typingDotsRow}>
-            <TypingDot delay={0} isActive={activeCount >= 1} />
-            <TypingDot delay={200} isActive={activeCount >= 2} />
-            <TypingDot delay={400} isActive={activeCount >= 3} />
-          </View>
-        </View>
-      </View>
-    </View>
-  );
-});
-
-function TypingDot({
-  delay,
-  isActive,
-}: {
-  delay: number;
-  isActive: boolean;
-}) {
-  const animatedValue = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    const animation = Animated.loop(
-      Animated.sequence([
-        Animated.delay(delay),
-        Animated.timing(animatedValue, {
-          duration: 320,
-          easing: Easing.inOut(Easing.ease),
-          toValue: 1,
-          useNativeDriver: true,
-        }),
-        Animated.timing(animatedValue, {
-          duration: 320,
-          easing: Easing.inOut(Easing.ease),
-          toValue: 0,
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-
-    animation.start();
-
-    return () => {
-      animation.stop();
-    };
-  }, [animatedValue, delay]);
-
-  const scale = animatedValue.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.6, 1],
-  });
-  const opacity = animatedValue.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.45, 1],
-  });
-
-  return (
-    <Animated.View
-      style={[
-        styles.typingDot,
-        isActive ? styles.typingDotActive : styles.typingDotInactive,
-        {
-          opacity: isActive ? opacity : 0.7,
-          transform: [{ scale: isActive ? scale : 0.75 }],
-        },
-      ]}
-    />
-  );
-}
-
-const LoadingShimmerRow = memo(function LoadingShimmerRow() {
-  const opacity = useRef(new Animated.Value(0.3)).current;
-
-  useEffect(() => {
-    const animation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacity, {
-          duration: 1000,
-          easing: Easing.inOut(Easing.ease),
-          toValue: 0.8,
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacity, {
-          duration: 1000,
-          easing: Easing.inOut(Easing.ease),
-          toValue: 0.3,
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-
-    animation.start();
-
-    return () => {
-      animation.stop();
-    };
-  }, [opacity]);
-
-  return (
-    <Animated.View style={[styles.shimmerBlock, { opacity }]}>
-      <View style={styles.shimmerRow}>
-        <View style={[styles.shimmerBubble, styles.shimmerCoachBubble]} />
-      </View>
-      <View style={styles.shimmerRow}>
-        <View style={[styles.shimmerBubble, styles.shimmerRunnerBubble]} />
-      </View>
-      <View style={styles.shimmerRow}>
-        <View style={[styles.shimmerBubble, styles.shimmerCoachBubbleShort]} />
-      </View>
-    </Animated.View>
-  );
-});
-
-function ReplyBar({
-  onClear,
-  preview,
-}: {
-  onClear: () => void;
-  preview: string;
-}) {
-  return (
-    <View style={styles.replyBar}>
-      <View style={styles.replyLine} />
-      <View style={styles.replyContent}>
-        <Text numberOfLines={1} style={styles.replyText}>
-          {preview}
-        </Text>
-      </View>
-      <Pressable
-        accessibilityLabel="Clear reply"
-        accessibilityRole="button"
-        onPress={onClear}
-        style={({ pressed }) => [
-          styles.replyCloseButton,
-          pressed && styles.buttonPressed,
-        ]}
-      >
-        <Ionicons color={colors.muted} name="close" size={16} />
-      </Pressable>
-    </View>
-  );
-}
-
-function AttachmentTray({
-  attachments,
-  onRemove,
-}: {
-  attachments: ComposerAttachment[];
-  onRemove: (attachmentId: string) => void;
-}) {
-  return (
-    <View style={styles.attachmentTray}>
-      {(attachments ?? []).map((attachment) => (
-        <View key={attachment.id} style={styles.attachmentChip}>
-          <Text numberOfLines={1} style={styles.attachmentChipText}>
-            {attachment.label}
-          </Text>
-          <Pressable
-            accessibilityLabel={`Remove ${attachment.label}`}
-            accessibilityRole="button"
-            onPress={() => onRemove(attachment.id)}
-            style={({ pressed }) => [
-              styles.attachmentChipButton,
-              pressed && styles.buttonPressed,
-            ]}
-          >
-            <Ionicons color={colors.muted} name="close" size={14} />
-          </Pressable>
-        </View>
-      ))}
-    </View>
-  );
-}
-
-function RecordingPreview({
-  isStarting,
-  meterSamples,
-}: {
-  isStarting: boolean;
-  meterSamples: number[];
-}) {
-  const samples =
-    Array.isArray(meterSamples) && meterSamples.length
-      ? meterSamples
-      : new Array(18).fill(0.16);
-
-  return (
-    <View style={styles.recordingBar}>
-      <View style={styles.recordingPulse} />
-      <Text style={styles.recordingText}>
-        {isStarting ? 'Starting recorder…' : 'Recording voice message'}
-      </Text>
-      <View style={styles.waveformRow}>
-        {(samples ?? []).map((sample, index) => (
-          <View
-            key={`${index}-${sample.toFixed(2)}`}
-            style={[
-              styles.waveformBar,
-              {
-                height: 8 + sample * 18,
-              },
-            ]}
-          />
-        ))}
-      </View>
-    </View>
-  );
-}
-
-function ChatLoadingState() {
-  return (
-    <View style={styles.loadingState}>
-      <ActivityIndicator color={colors.text} size="small" />
-      <Text style={styles.loadingStateText}>Loading your conversation…</Text>
-    </View>
-  );
-}
-
-function CoachErrorStateCard({
-  errorPresentation,
-  onPrimaryAction,
-  onSecondaryAction,
-}: {
-  errorPresentation: CoachErrorPresentation;
-  onPrimaryAction: () => Promise<void>;
-  onSecondaryAction?: () => Promise<void>;
-}) {
-  return (
-    <View style={styles.errorState}>
-      <Text style={styles.errorTitle}>{errorPresentation.title}</Text>
-      <Text style={styles.errorBody}>{errorPresentation.description}</Text>
-      <Pressable
-        accessibilityLabel={errorPresentation.primaryActionLabel}
-        accessibilityRole="button"
-        onPress={() => {
-          void onPrimaryAction();
-        }}
-        style={({ pressed }) => [
-          styles.retryButton,
-          pressed && styles.buttonPressed,
-        ]}
-      >
-        <Text style={styles.retryButtonText}>
-          {errorPresentation.primaryActionLabel}
-        </Text>
-      </Pressable>
-      {onSecondaryAction ? (
-        <Pressable
-          accessibilityLabel="Sign out"
-          accessibilityRole="button"
-          onPress={() => {
-            void onSecondaryAction();
-          }}
-          style={({ pressed }) => [
-            styles.ghostButton,
-            pressed && styles.buttonPressed,
-          ]}
-        >
-          <Text style={styles.ghostButtonText}>Sign out</Text>
-        </Pressable>
-      ) : null}
-    </View>
-  );
-}
-
-function areMessageRowPropsEqual(
-  previous: Readonly<MessageRowProps>,
-  next: Readonly<MessageRowProps>,
-) {
-  return (
-    previous.animationDelay === next.animationDelay &&
-    previous.coachBubbleColor === next.coachBubbleColor &&
-    previous.densityTier === next.densityTier &&
-    previous.isCascadeClosing === next.isCascadeClosing &&
-    previous.isFirstInSequence === next.isFirstInSequence &&
-    previous.isPending === next.isPending &&
-    previous.messageTextColor === next.messageTextColor &&
-    previous.message.id === next.message.id &&
-    previous.message.role === next.message.role &&
-    previous.message.content === next.message.content &&
-    previous.message.createdAt === next.message.createdAt &&
-    previous.message.messageType === next.message.messageType &&
-    previous.runnerBubbleColor === next.runnerBubbleColor &&
-    previous.message.socialPost?.caption === next.message.socialPost?.caption &&
-    previous.message.socialPost?.imageUrl === next.message.socialPost?.imageUrl
-  );
-}
-
-function createReplyPanResponder({
-  message,
-  onReply,
-  replyTriggeredRef,
-  translateX,
-}: {
-  message: CoachMessage;
-  onReply: (message: CoachMessage) => void;
-  replyTriggeredRef: MutableRefObject<boolean>;
-  translateX: Animated.Value;
-}): PanResponderInstance {
-  return PanResponder.create({
-    onMoveShouldSetPanResponder: (_, gestureState) =>
-      Math.abs(gestureState.dx) > 12 &&
-      Math.abs(gestureState.dx) > Math.abs(gestureState.dy),
-    onPanResponderGrant: () => {
-      replyTriggeredRef.current = false;
-    },
-    onPanResponderMove: (_, gestureState) => {
-      if (gestureState.dx <= 0 || Math.abs(gestureState.dy) >= Math.abs(gestureState.dx)) {
-        return;
-      }
-
-      translateX.setValue(Math.min(gestureState.dx, 50));
-    },
-    onPanResponderRelease: async (_, gestureState) => {
-      const shouldReply =
-        gestureState.dx > 60 && Math.abs(gestureState.dy) < Math.abs(gestureState.dx);
-
-      if (shouldReply && !replyTriggeredRef.current) {
-        replyTriggeredRef.current = true;
-        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        onReply(message);
+    const createLoop = (value: Animated.Value, delay: number) =>
+      Animated.loop(
         Animated.sequence([
-          Animated.spring(translateX, {
-            bounciness: 8,
-            speed: 22,
-            toValue: 50,
+          Animated.delay(delay),
+          Animated.timing(value, {
+            duration: 520,
+            toValue: 1,
             useNativeDriver: true,
           }),
-          Animated.spring(translateX, {
-            bounciness: 8,
-            speed: 22,
-            toValue: 0,
+          Animated.timing(value, {
+            duration: 520,
+            toValue: 0.45,
             useNativeDriver: true,
           }),
-        ]).start();
-        return;
-      }
+        ]),
+      );
 
-      Animated.spring(translateX, {
-        bounciness: 8,
-        speed: 22,
-        toValue: 0,
-        useNativeDriver: true,
-      }).start();
-    },
-    onPanResponderTerminate: () => {
-      Animated.spring(translateX, {
-        bounciness: 8,
-        speed: 22,
-        toValue: 0,
-        useNativeDriver: true,
-      }).start();
-    },
-  });
+    const first = createLoop(dotOne, 0);
+    const second = createLoop(dotTwo, 140);
+    const third = createLoop(dotThree, 280);
+
+    first.start();
+    second.start();
+    third.start();
+
+    return () => {
+      first.stop();
+      second.stop();
+      third.stop();
+    };
+  }, [dotOne, dotThree, dotTwo]);
+
+  return (
+    <View style={styles.typingRow}>
+      <View style={styles.typingDots}>
+        <Animated.View
+          style={[
+            styles.typingDot,
+            { opacity: dotOne, transform: [{ scale: dotOne }] },
+          ]}
+        />
+        <Animated.View
+          style={[
+            styles.typingDot,
+            { opacity: dotTwo, transform: [{ scale: dotTwo }] },
+          ]}
+        />
+        <Animated.View
+          style={[
+            styles.typingDot,
+            { opacity: dotThree, transform: [{ scale: dotThree }] },
+          ]}
+        />
+      </View>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    backgroundColor: colors.background,
-    flex: 1,
-  },
-  topStatusFade: {
-    height: 40,
-    left: 0,
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    zIndex: 10,
-  },
-  tabletShell: {
-    flexDirection: 'row',
-  },
-  conversationPane: {
-    flex: 1,
-  },
-  tabletConversation: {
-    borderRightColor: colors.border,
-    borderRightWidth: StyleSheet.hairlineWidth,
-  },
-  tabletSidebar: {
-    backgroundColor: colors.surface,
-    width: 280,
-  },
-  header: {
-    overflow: 'hidden',
-    paddingBottom: 12,
-    paddingHorizontal: 20,
-    position: 'relative',
-  },
-  headerGradient: {
-    ...StyleSheet.absoluteFillObject,
-    bottom: -24,
-  },
-  headerContent: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  headerIdentity: {
-    alignItems: 'center',
-    flex: 1,
-    flexDirection: 'row',
-    minWidth: 0,
-  },
-  headerAvatar: {
-    alignItems: 'center',
-    height: 28,
-    justifyContent: 'center',
-    width: 28,
-  },
-  headerAvatarText: {
-    color: '#F5F5F7',
-    fontFamily: fonts.ui,
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  headerTitlePressed: {
-    opacity: 0.92,
-  },
-  headerActions: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    marginLeft: 16,
-  },
-  headerActionWrap: {
-    position: 'relative',
-  },
-  phoneDailyViewButton: {
-    alignItems: 'center',
-    alignSelf: 'stretch',
-    backgroundColor: 'rgba(24, 24, 26, 0.82)',
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 14,
-    minHeight: 42,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-  },
-  dailyViewButton: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(24, 24, 26, 0.82)',
-    borderColor: 'rgba(255, 255, 255, 0.08)',
-    borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    gap: 10,
-    minHeight: 38,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  dailyViewButtonActive: {
-    backgroundColor: 'rgba(42, 42, 46, 0.96)',
-    borderColor: 'rgba(255, 255, 255, 0.14)',
-  },
-  dailyViewButtonCopy: {
-    flex: 1,
-    flexShrink: 1,
-    minWidth: 0,
-  },
-  dailyViewButtonEyebrow: {
-    color: '#6E6E73',
-    fontFamily: fonts.ui,
-    fontSize: 9,
-    fontWeight: '600',
-    letterSpacing: 1.4,
-  },
-  dailyViewButtonTitle: {
-    color: '#F5F5F7',
-    fontFamily: fonts.coach,
-    fontSize: 13,
-    lineHeight: 16,
-    marginTop: 1,
-    maxWidth: 112,
-  },
-  dailyViewButtonMeta: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 4,
-    marginLeft: 12,
-  },
-  dailyViewButtonMetaText: {
-    color: '#8E8E93',
-    fontFamily: fonts.ui,
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  headerIconButton: {
-    alignItems: 'center',
-    height: 36,
-    justifyContent: 'center',
-    opacity: 1,
-    width: 36,
-  },
-  headerActionPressed: {
-    opacity: 0.72,
-  },
-  settingsHintTooltip: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(28, 28, 30, 0.96)',
-    borderRadius: 10,
-    minWidth: 72,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    position: 'absolute',
-    right: -10,
-    top: 38,
-  },
-  settingsHintText: {
-    color: '#E8E8ED',
-    fontFamily: fonts.ui,
-    fontSize: 12,
-    fontWeight: '600',
-    lineHeight: 14,
-    textAlign: 'center',
-  },
-  headerTitleBlock: {
-    marginLeft: 12,
-  },
-  headerEyebrow: {
-    color: '#6E6E73',
-    fontFamily: fonts.ui,
-    fontSize: 11,
-    fontWeight: '500',
-    letterSpacing: 1.8,
-  },
-  headerTitle: {
-    color: '#F5F5F7',
-    fontFamily: fonts.coach,
-    fontSize: 24,
-    fontWeight: '400',
-    letterSpacing: 4,
-    lineHeight: 30,
-    marginTop: 4,
-  },
-  headerDivider: {
-    backgroundColor: '#38383A',
-    height: StyleSheet.hairlineWidth,
-    marginTop: 12,
-    width: '100%',
-  },
-  stickyDateContainer: {
-    alignItems: 'center',
-    left: 0,
-    position: 'absolute',
-    right: 0,
-    zIndex: 11,
-  },
-  stickyDatePill: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(44, 44, 46, 0.9)',
-    borderRadius: 14,
-    height: 28,
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-  },
-  stickyDatePillText: {
-    color: '#8E8E93',
-    fontFamily: fonts.ui,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  list: {
-    flex: 1,
-  },
-  listShell: {
-    flex: 1,
-    position: 'relative',
-  },
-  contentTopFade: {
-    height: 40,
-    left: 0,
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    zIndex: 10,
-  },
-  listContent: {
-    paddingBottom: spacing.lg,
-    paddingHorizontal: 20,
-    paddingTop: 8,
-  },
-  listEdgeGradient: {
-    bottom: 0,
-    height: 12,
-    left: 0,
-    position: 'absolute',
-    right: 0,
-  },
-  dayLabelRow: {
-    alignItems: 'center',
-    marginBottom: 8,
-    marginTop: 24,
-  },
-  dayLabelText: {
-    color: colors.dim,
-    fontFamily: fonts.mono,
-    fontSize: 11,
-    letterSpacing: 0.88,
-    textAlign: 'center',
-    textTransform: 'uppercase',
-  },
-  sessionSummaryRow: {
-    alignItems: 'center',
-    alignSelf: 'stretch',
-    backgroundColor: '#1C1C1E',
-    borderBottomColor: '#2C2C2E',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    justifyContent: 'center',
-    marginTop: 24,
-    minHeight: 42,
-    paddingVertical: 10,
-  },
-  sessionSummarySpacer: {
-    marginTop: 24,
-    minHeight: 42,
-  },
-  sessionSummaryText: {
-    color: '#48484A',
-    fontFamily: fonts.ui,
-    fontSize: 11,
-    textAlign: 'center',
-  },
-  closingCeremonyRow: {
-    alignItems: 'center',
-    marginTop: 24,
-    paddingBottom: 12,
-  },
-  closingCeremonyText: {
-    color: '#48484A',
-    fontFamily: fonts.ui,
-    fontSize: 12,
-    textAlign: 'center',
-  },
-  messageRow: {
-    alignItems: 'flex-start',
-    flexDirection: 'row',
-    position: 'relative',
-    width: '100%',
-  },
-  coachSide: {
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    left: 4,
-    position: 'absolute',
-    top: 18,
-    width: 10,
-    zIndex: 2,
-  },
-  coachIndicator: {
-    borderRadius: 999,
-    height: 8,
-    width: 10,
-  },
-  messageBodyColumn: {
-    flex: 1,
-  },
-  coachColumn: {
-    alignItems: 'flex-start',
-  },
-  runnerColumn: {
-    alignItems: 'flex-end',
-  },
-  messageBubble: {
-    borderRadius: 16,
-    paddingBottom: 28,
-    paddingHorizontal: 20,
-    paddingTop: 16,
-  },
-  coachBubble: {
-    backgroundColor: 'rgba(28, 28, 30, 0.85)',
-    maxWidth: '82%',
-    overflow: 'hidden',
-  },
-  runnerBubble: {
-    backgroundColor: 'rgba(28, 28, 30, 0.72)',
-    borderRadius: 16,
-    maxWidth: '82%',
-    overflow: 'hidden',
-  },
-  closingBubbleAccent: {
-    borderLeftColor: '#2BB84D',
-    borderLeftWidth: 3,
-  },
-  socialBubble: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
-  },
-  coachMessageText: {
-    color: '#E8E8ED',
-    fontFamily: fonts.coach,
-    fontSize: 16.5,
-    lineHeight: 24,
-  },
-  coachClosingMessageText: {
-    color: 'rgba(232,232,237,0.7)',
-    fontStyle: 'italic',
-  },
-  coachFirstLineText: {
-    color: colors.text,
-    fontFamily: fonts.coach,
-    fontSize: 15,
-    fontWeight: '500',
-    lineHeight: 25,
-  },
-  runnerMessageText: {
-    color: '#E8E8ED',
-    fontFamily: fonts.ui,
-    fontSize: 16.5,
-    lineHeight: 24,
-    textAlign: 'right',
-  },
-  messageTextContainer: {
-    position: 'relative',
-  },
-  markdownBlock: {
-    gap: 0,
-  },
-  semanticCoachBubble: {
-    backgroundColor: 'transparent',
-    borderWidth: 0,
-    maxWidth: '88%',
-    paddingHorizontal: 0,
-    paddingVertical: 0,
-    shadowOpacity: 0,
-  },
-  coachFloatingHeadline: {
-    color: colors.text,
-    fontFamily: fonts.coach,
-    fontSize: 17,
-    fontWeight: '600',
-    lineHeight: 25,
-    marginBottom: 12,
-  },
-  coachCardStack: {
-    alignSelf: 'stretch',
-  },
-  coachMiniCard: {
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  coachMiniCardFirst: {
-    borderLeftColor: 'rgba(139,58,58,0.25)',
-    borderLeftWidth: 2,
-    paddingRight: 52,
-  },
-  coachMiniCardSpaced: {
-    marginBottom: 6,
-  },
-  cardTimestampText: {
-    color: 'rgba(255,255,255,0.15)',
-    fontFamily: fonts.ui,
-    fontSize: 10,
-    lineHeight: 12,
-    position: 'absolute',
-    right: 12,
-    top: 10,
-  },
-  coachLeadCardText: {
-    color: colors.text,
-    fontSize: 17,
-    fontWeight: '600',
-    lineHeight: 26,
-  },
-  coachPostscriptText: {
-    color: 'rgba(242,237,228,0.6)',
-    fontFamily: fonts.coach,
-    fontSize: 14,
-    fontStyle: 'italic',
-    lineHeight: 22,
-    marginTop: 12,
-  },
-  markdownClosingGap: {
-    lineHeight: 8,
-  },
-  inlineStrong: {
-    color: '#E8E8ED',
-    fontWeight: '600',
-  },
-  inlineEmphasis: {
-    fontStyle: 'italic',
-  },
-  inlineStrongText: {
-    color: colors.text,
-  },
-  dataReferenceText: {
-    backgroundColor: 'transparent',
-    borderRadius: 0,
-    color: '#E8E8ED',
-    fontFamily: fonts.mono,
-    fontSize: 16.5,
-    lineHeight: 24,
-    paddingHorizontal: 0,
-    paddingVertical: 0,
-  },
-  inlineCodeText: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 10,
-    color: '#E8E8ED',
-    fontFamily: fonts.mono,
-    fontSize: 16.5,
-    lineHeight: 24,
-    overflow: 'hidden',
-    paddingHorizontal: 6,
-    paddingVertical: 0,
-  },
-  messageFade: {
-    bottom: 0,
-    height: 50,
-    left: 0,
-    position: 'absolute',
-    right: 0,
-  },
-  bubbleTimestampText: {
-    color: '#48484A',
-    fontFamily: fonts.ui,
-    fontSize: 11,
-    lineHeight: 13,
-    position: 'absolute',
-    right: 0,
-    bottom: -12,
-    textAlign: 'right',
-  },
-  typingBubble: {
-    minHeight: 52,
-    minWidth: 88,
-  },
-  typingDotsRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: spacing.xs,
-  },
-  typingDot: {
-    borderRadius: radii.pill,
-    height: 8,
-    width: 8,
-  },
-  typingDotActive: {
-    backgroundColor: colors.text,
-  },
-  typingDotInactive: {
-    backgroundColor: 'transparent',
-    borderColor: colors.muted,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  shimmerBlock: {
-    gap: spacing.md,
-    marginTop: spacing.lg,
-  },
-  shimmerRow: {
-    width: '100%',
-  },
-  shimmerBubble: {
-    backgroundColor: colors.surface,
-    borderRadius: radii.card,
-    height: 52,
-  },
-  shimmerCoachBubble: {
-    width: '72%',
-  },
-  shimmerCoachBubbleShort: {
-    width: '58%',
-  },
-  shimmerRunnerBubble: {
-    alignSelf: 'flex-end',
-    width: '52%',
-  },
-  socialCard: {
-    gap: spacing.md,
-  },
-  socialImage: {
-    backgroundColor: colors.background,
-    borderRadius: radii.input,
-    height: 220,
-    width: '100%',
-  },
-  socialCaption: {
-    color: colors.text,
-    fontFamily: fonts.coach,
-    fontSize: 15,
-    lineHeight: 25,
-    paddingHorizontal: spacing.sm,
-  },
-  socialActions: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.sm,
-    paddingBottom: spacing.xs,
-  },
-  socialActionButton: {
-    alignItems: 'center',
-    backgroundColor: colors.background,
-    borderColor: colors.border,
-    borderRadius: radii.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-    flex: 1,
-    justifyContent: 'center',
-    minHeight: 34,
-    paddingHorizontal: spacing.sm,
-  },
-  socialActionText: {
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: '600',
-    textAlign: 'center',
-  },
-  composerContainer: {
-    backgroundColor: '#000000',
-    gap: spacing.sm,
-    minHeight: 78,
-    paddingHorizontal: 16,
-    paddingTop: 10,
-  },
-  queueIndicator: {
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(28, 28, 30, 0.72)',
-    borderRadius: radii.pill,
-    flexDirection: 'row',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-  },
-  queueIndicatorText: {
-    color: colors.muted,
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  replyBar: {
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radii.input,
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  replyLine: {
-    backgroundColor: colors.accent,
-    borderRadius: radii.pill,
-    height: '100%',
-    width: 2,
-  },
-  replyContent: {
-    flex: 1,
-  },
-  replyText: {
-    color: colors.text,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  replyCloseButton: {
-    alignItems: 'center',
-    height: 24,
-    justifyContent: 'center',
-    width: 24,
-  },
-  attachmentTray: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
   attachmentChip: {
     alignItems: 'center',
     backgroundColor: colors.surface,
-    borderColor: colors.border,
+    borderColor: colors.separator,
     borderRadius: radii.pill,
     borderWidth: StyleSheet.hairlineWidth,
     flexDirection: 'row',
-    gap: spacing.xs,
-    maxWidth: '100%',
-    paddingLeft: spacing.md,
-    paddingRight: spacing.sm,
-    paddingVertical: spacing.xs,
+    gap: 8,
+    maxWidth: 220,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   attachmentChipText: {
     color: colors.text,
+    flexShrink: 1,
+    fontSize: 13,
+  },
+  attachmentRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 10,
+  },
+  closingNote: {
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 8,
+  },
+  closingNoteText: {
+    color: colors.textTertiary,
     fontSize: 12,
-    lineHeight: 16,
-    maxWidth: 180,
-  },
-  attachmentChipButton: {
-    alignItems: 'center',
-    height: 20,
-    justifyContent: 'center',
-    width: 20,
-  },
-  recordingBar: {
-    alignItems: 'center',
-    backgroundColor: '#2A1717',
-    borderColor: '#6D3030',
-    borderRadius: radii.input,
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: 'row',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  recordingPulse: {
-    backgroundColor: '#E4A0A0',
-    borderRadius: radii.pill,
-    height: 10,
-    width: 10,
-  },
-  recordingText: {
-    color: colors.text,
-    flexShrink: 0,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  waveformRow: {
-    alignItems: 'center',
-    flex: 1,
-    flexDirection: 'row',
-    gap: 3,
-    justifyContent: 'flex-end',
-  },
-  waveformBar: {
-    backgroundColor: '#E4A0A0',
-    borderRadius: radii.pill,
-    width: 3,
-  },
-  inlineErrorBanner: {
-    backgroundColor: '#2A1717',
-    borderColor: '#6D3030',
-    borderRadius: radii.input,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-  },
-  inlineErrorTitle: {
-    color: '#F1C4C4',
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-  },
-  inlineErrorBody: {
-    color: '#D8A5A5',
-    fontSize: 13,
     lineHeight: 18,
-    marginTop: spacing.xs,
+    textAlign: 'center',
   },
-  inputBar: {
-    alignItems: 'center',
-    backgroundColor: '#000000',
+  coachBodyParagraph: {
+    marginTop: 12,
+  },
+  metricBlock: {
+    marginBottom: 14,
+  },
+  metricBlockTitle: {
+    color: colors.textTertiary,
+    fontFamily: fonts.ui,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    marginBottom: 8,
+  },
+  metricRow: {
     flexDirection: 'row',
-    gap: 12,
-    paddingHorizontal: 0,
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 14,
+  },
+  metricChip: {
+    alignItems: 'baseline',
+    backgroundColor: 'rgba(216,176,122,0.18)',
+    borderColor: 'rgba(216,176,122,0.38)',
+    borderRadius: 12,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 10,
     paddingVertical: 6,
   },
-  attachButton: {
-    alignItems: 'center',
-    height: 24,
-    justifyContent: 'center',
-    opacity: 1,
-    width: 24,
+  metricChipGap: {},
+  metricLabel: {
+    color: colors.textTertiary,
+    fontFamily: fonts.ui,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.1,
   },
-  input: {
-    backgroundColor: '#2C2C2E',
-    borderColor: 'transparent',
-    borderRadius: 22,
-    borderWidth: 0,
-    color: '#E8E8ED',
-    flex: 1,
-    fontSize: 15,
-    lineHeight: 20,
-    maxHeight: INPUT_MAX_HEIGHT,
-    minHeight: INPUT_MIN_HEIGHT,
-    paddingBottom: 12,
+  metricValue: {
+    color: '#E6C28D',
+    fontFamily: fonts.mono,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  coachBodyText: {
+    color: colors.text,
+    fontFamily: fonts.coach,
+    fontSize: 16,
+    lineHeight: 27,
+    marginTop: 4,
+  },
+  coachBodyTextCjk: {
+    fontFamily: fonts.ui,
+    lineHeight: 27,
+  },
+  coachHeadlineText: {
+    color: colors.text,
+    fontFamily: fonts.coachBold,
+    fontSize: 16.5,
+    lineHeight: 26,
+  },
+  coachHeadlineTextCjk: {
+    fontFamily: fonts.ui,
+    fontWeight: '600',
+  },
+  coachRow: {
+    borderLeftColor: 'rgba(242,237,228,0.08)',
+    borderLeftWidth: 2,
+    marginTop: 20,
+    paddingHorizontal: 20,
+    paddingLeft: 24,
+  },
+  compactHeaderTitle: {
+    color: colors.text,
+    fontFamily: fonts.coachBold,
+    fontSize: 20,
+  },
+  composerError: {
+    color: colors.destructive,
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  composerRow: {
+    alignItems: 'flex-end',
+    flexDirection: 'row',
+    gap: 10,
+  },
+  composerShell: {
+    backgroundColor: colors.background,
+    borderTopColor: colors.separator,
+    borderTopWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 16,
     paddingTop: 12,
-    textAlignVertical: 'center',
+    paddingBottom: 4,
   },
-  inputResting: {
-    fontStyle: 'italic',
+  dayLabel: {
+    color: colors.textTertiary,
+    fontSize: 12,
+    fontWeight: '500',
+    letterSpacing: 1.5,
+    marginHorizontal: 12,
+    textTransform: 'uppercase',
   },
-  sendButton: {
+  dayLine: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+  },
+  daySeparator: {
     alignItems: 'center',
-    alignSelf: 'center',
-    height: 24,
-    justifyContent: 'center',
-    width: 24,
+    flexDirection: 'row',
+    marginVertical: 24,
+    paddingHorizontal: 16,
   },
-  micButton: {
-    alignItems: 'center',
-    alignSelf: 'center',
-    height: 24,
-    justifyContent: 'center',
-    opacity: 1,
-    width: 24,
-  },
-  micButtonActive: {
-    opacity: 1,
-  },
-  inputAccessoryResting: {
-    opacity: 0.2,
-  },
-  iconControlPressed: {
-    opacity: 0.8,
-  },
-  sendButtonPressed: {
-    opacity: 0.9,
-  },
-  scrollIndicator: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    borderRadius: radii.pill,
-    position: 'absolute',
-    right: 4,
-    top: 0,
-    width: 2,
-  },
-  buttonPressed: {
-    opacity: 0.86,
-  },
-  buttonDisabled: {
+  disabled: {
     opacity: 0.5,
   },
-  loadingState: {
+  emptyState: {
     alignItems: 'center',
     flex: 1,
     justifyContent: 'center',
-    padding: spacing.xl,
   },
-  loadingStateText: {
-    color: colors.muted,
-    marginTop: spacing.md,
+  emptyStateText: {
+    color: colors.textSecondary,
+    fontFamily: fonts.ui,
+    fontSize: 17,
+    marginTop: 16,
+  },
+  errorBody: {
+    color: colors.textSecondary,
+    fontSize: 15,
+    lineHeight: 22,
+    marginTop: 8,
+    textAlign: 'center',
   },
   errorState: {
     alignItems: 'center',
     flex: 1,
     justifyContent: 'center',
-    padding: spacing.xl,
+    paddingHorizontal: 32,
   },
   errorTitle: {
     color: colors.text,
-    fontFamily: fonts.coach,
-    fontSize: 28,
-    lineHeight: 34,
+    fontFamily: fonts.coachBold,
+    fontSize: 24,
     textAlign: 'center',
   },
-  errorBody: {
-    color: colors.muted,
+  gearButton: {
+    alignItems: 'center',
+    borderRadius: radii.pill,
+    height: 44,
+    justifyContent: 'center',
+    width: 44,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+  },
+  greeting: {
+    color: colors.text,
+    fontFamily: fonts.ui,
+    fontSize: 24,
+    fontWeight: '400',
+    letterSpacing: -0.5,
+    lineHeight: 34,
+    marginTop: 12,
+  },
+  header: {
+    backgroundColor: colors.background,
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+    paddingTop: 8,
+  },
+  headerTopRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  inlineItalic: {
+    fontStyle: 'italic',
+  },
+  inlineMono: {
+    fontFamily: fonts.mono,
     fontSize: 15,
+  },
+  inlineStrong: {
+    fontFamily: fonts.coachBold,
+  },
+  input: {
+    backgroundColor: colors.surface,
+    borderColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 22,
+    borderWidth: StyleSheet.hairlineWidth,
+    color: colors.text,
+    flex: 1,
+    fontSize: 16,
     lineHeight: 22,
-    marginTop: spacing.md,
-    textAlign: 'center',
+    minHeight: INPUT_MIN_HEIGHT,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+  },
+  inputWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  listContent: {
+    flexGrow: 1,
+  },
+  pendingMessage: {
+    opacity: 0.6,
+  },
+  pressed: {
+    opacity: 0.65,
+  },
+  queueNotice: {
+    color: colors.textTertiary,
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  replyBanner: {
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    borderColor: colors.separator,
+    borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  replyBannerText: {
+    color: colors.textSecondary,
+    flex: 1,
+    fontSize: 13,
+    marginRight: 12,
   },
   retryButton: {
     alignItems: 'center',
+    alignSelf: 'center',
     backgroundColor: colors.accent,
     borderRadius: radii.pill,
     justifyContent: 'center',
-    marginTop: spacing.xl,
-    minHeight: 50,
-    paddingHorizontal: spacing.xl,
+    marginTop: 20,
+    minHeight: 46,
+    paddingHorizontal: 20,
   },
   retryButtonText: {
     color: colors.text,
+    fontSize: 15,
     fontWeight: '600',
   },
-  ghostButton: {
+  runnerMessageText: {
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderRadius: 16,
+    color: colors.textSecondary,
+    fontFamily: fonts.ui,
+    fontSize: 15.5,
+    lineHeight: 23,
+    maxWidth: '75%',
+    overflow: 'hidden',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    textAlign: 'right',
+  },
+  runnerRow: {
+    alignItems: 'flex-end',
+    marginTop: 14,
+    paddingHorizontal: 20,
+  },
+  runnerBubble: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    maxWidth: '75%',
+  },
+  screen: {
+    backgroundColor: colors.background,
+    flex: 1,
+  },
+  sideAction: {
     alignItems: 'center',
-    borderColor: colors.border,
-    borderRadius: radii.pill,
-    borderWidth: StyleSheet.hairlineWidth,
+    height: 44,
     justifyContent: 'center',
-    marginTop: spacing.md,
-    minHeight: 50,
-    paddingHorizontal: spacing.xl,
+    width: 28,
   },
-  ghostButtonText: {
-    color: colors.muted,
-    fontWeight: '600',
+  socialAction: {
+    paddingVertical: 4,
   },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: spacing.xl,
-    paddingVertical: spacing.xxl,
+  socialActionText: {
+    color: colors.textSecondary,
+    fontSize: 13,
   },
-  emptyTitle: {
-    color: colors.text,
-    fontFamily: fonts.coach,
-    fontSize: 26,
-    lineHeight: 32,
-    textAlign: 'center',
+  socialActions: {
+    flexDirection: 'row',
+    gap: 16,
+    marginTop: 10,
   },
-  emptyBody: {
-    color: colors.muted,
+  socialImage: {
+    borderRadius: 18,
+    height: 220,
+    width: '100%',
+  },
+  socialPostCard: {
+    marginBottom: 12,
+  },
+  subheading: {
+    color: colors.textSecondary,
+    fontFamily: fonts.ui,
     fontSize: 15,
     lineHeight: 22,
-    marginTop: spacing.md,
-    maxWidth: 280,
-    textAlign: 'center',
+    marginTop: 2,
+  },
+  trailingAction: {
+    alignItems: 'center',
+    bottom: 8,
+    height: 28,
+    justifyContent: 'center',
+    position: 'absolute',
+    right: 12,
+    width: 28,
+  },
+  typingRow: {
+    marginTop: 16,
+    paddingHorizontal: 24,
+  },
+  typingDot: {
+    backgroundColor: colors.textTertiary,
+    borderRadius: 3,
+    height: 6,
+    width: 6,
+  },
+  typingDots: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
   },
 });

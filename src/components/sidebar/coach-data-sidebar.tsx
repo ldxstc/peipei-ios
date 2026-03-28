@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useRef } from 'react';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useEffect, useMemo, useRef } from 'react';
 import {
   ActivityIndicator,
   Animated,
@@ -9,6 +10,7 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import {
   PanGestureHandler,
@@ -21,7 +23,7 @@ import { colors, fonts, radii, spacing } from '../../design/tokens';
 import { ApiError, getCoachSidebar } from '../../lib/api';
 
 const SIDEBAR_WIDTH = 280;
-const FLOATING_PANEL_WIDTH = 328;
+const FLOATING_PANEL_MAX_WIDTH = 364;
 
 type CoachDataSidebarProps = {
   bottomInset: number;
@@ -43,7 +45,8 @@ export function CoachDataSidebar({
   variant = 'overlay',
 }: CoachDataSidebarProps) {
   const isDocked = variant === 'docked';
-  const translateX = useRef(new Animated.Value(SIDEBAR_WIDTH)).current;
+  const { height, width } = useWindowDimensions();
+  const translateY = useRef(new Animated.Value(height)).current;
   const sidebarQuery = useQuery({
     queryKey: ['coach-sidebar'],
     queryFn: () => getCoachSidebar(sessionCookie ?? ''),
@@ -51,63 +54,61 @@ export function CoachDataSidebar({
   });
 
   useEffect(() => {
-    Animated.spring(translateX, {
+    if (isDocked) {
+      return;
+    }
+
+    Animated.spring(translateY, {
       bounciness: 0,
       speed: 18,
-      toValue: isOpen ? 0 : SIDEBAR_WIDTH,
+      toValue: isOpen ? 0 : height,
       useNativeDriver: true,
     }).start();
-  }, [isOpen, translateX]);
+  }, [height, isDocked, isOpen, translateY]);
 
-  const scrimOpacity = translateX.interpolate({
+  useEffect(() => {
+    if (!isDocked && !isOpen) {
+      translateY.setValue(height);
+    }
+  }, [height, isDocked, isOpen, translateY]);
+
+  const panelWidth = useMemo(() => {
+    if (isDocked) {
+      return SIDEBAR_WIDTH;
+    }
+
+    return Math.min(FLOATING_PANEL_MAX_WIDTH, width - spacing.md * 2);
+  }, [isDocked, width]);
+
+  const scrimOpacity = translateY.interpolate({
     extrapolate: 'clamp',
-    inputRange: [0, SIDEBAR_WIDTH],
-    outputRange: [0.26, 0],
+    inputRange: [0, height],
+    outputRange: [0.42, 0],
   });
 
-  function clamp(value: number) {
-    return Math.max(0, Math.min(SIDEBAR_WIDTH, value));
-  }
-
-  function handleEdgeGesture(event: PanGestureHandlerGestureEvent) {
-    const { translationX } = event.nativeEvent;
-
-    if (translationX < 0) {
-      translateX.setValue(clamp(SIDEBAR_WIDTH + translationX));
-    }
-  }
-
-  function handleEdgeStateChange(event: PanGestureHandlerStateChangeEvent) {
-    if (event.nativeEvent.oldState !== State.ACTIVE) {
-      return;
-    }
-
-    const { translationX, velocityX } = event.nativeEvent;
-    const shouldOpen = translationX < -SIDEBAR_WIDTH / 4 || velocityX < -600;
-
-    if (shouldOpen) {
-      onOpen();
-      return;
-    }
-
-    onClose();
+  function clampSheetOffset(value: number) {
+    return Math.max(0, Math.min(height, value));
   }
 
   function handlePanelGesture(event: PanGestureHandlerGestureEvent) {
-    const { translationX } = event.nativeEvent;
+    if (isDocked) {
+      return;
+    }
 
-    if (translationX < 0) {
-      translateX.setValue(clamp(-translationX));
+    const { translationY } = event.nativeEvent;
+
+    if (translationY > 0) {
+      translateY.setValue(clampSheetOffset(translationY));
     }
   }
 
   function handlePanelStateChange(event: PanGestureHandlerStateChangeEvent) {
-    if (event.nativeEvent.oldState !== State.ACTIVE) {
+    if (isDocked || event.nativeEvent.oldState !== State.ACTIVE) {
       return;
     }
 
-    const { translationX, velocityX } = event.nativeEvent;
-    const shouldClose = translationX < -SIDEBAR_WIDTH / 4 || velocityX < -600;
+    const { translationY, velocityY } = event.nativeEvent;
+    const shouldClose = translationY > 120 || velocityY > 900;
 
     if (shouldClose) {
       onClose();
@@ -129,44 +130,67 @@ export function CoachDataSidebar({
     return 'The panel could not load.';
   }
 
+  const todayPlanTitle = sidebarQuery.data?.todayPlan.title || "Check today's plan";
+  const todayDistance = sidebarQuery.data?.todayPlan.distance || '--';
+  const weekDistance = sidebarQuery.data?.thisWeek.km || '0';
+  const weekRuns = sidebarQuery.data?.thisWeek.runs || '0';
+  const weekPace = sidebarQuery.data?.thisWeek.avgPace || '--';
+  const recentRuns = sidebarQuery.data?.recentRuns ?? [];
+  const goalTitle = sidebarQuery.data?.goalProgress.title || 'Goal Progress';
+  const goalCountdown = sidebarQuery.data?.goalProgress.countdown || 'No race set';
+  const goalDetail =
+    sidebarQuery.data?.goalProgress.detail || 'Set a race goal in the web app';
+
+  const heroSummary =
+    todayDistance !== '--'
+      ? `${todayDistance} planned today`
+      : weekPace !== '--'
+      ? `Week moving at ${weekPace}`
+      : 'Open the day with restraint';
+
   const panelContent = (
     <>
       <View style={styles.panelHeader}>
-        <View>
-          <Text style={styles.panelEyebrow}>Daily View</Text>
-          <Text style={styles.panelTitle}>For the long run</Text>
-          <Text style={styles.panelSubtitle}>
-            Today&apos;s plan, your recent rhythm, and what the goal still asks of you.
-          </Text>
+        {!isDocked ? <View style={styles.grabber} /> : null}
+
+        <View style={styles.headerRow}>
+          <View style={styles.headerCopy}>
+            <Text style={styles.panelEyebrow}>Today</Text>
+            <Text style={styles.panelTitle}>Daily view</Text>
+            <Text style={styles.panelSubtitle}>
+              A quieter read of the day: the plan, the recent pattern, and the horizon.
+            </Text>
+          </View>
+
+          {!isDocked ? (
+            <Pressable
+              accessibilityLabel="Close daily view"
+              accessibilityRole="button"
+              onPress={onClose}
+              style={({ pressed }) => [
+                styles.closeButton,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Ionicons color={colors.text} name="close" size={17} />
+            </Pressable>
+          ) : null}
         </View>
-        {!isDocked ? (
-          <Pressable
-            accessibilityLabel="Close data panel"
-            accessibilityRole="button"
-            onPress={onClose}
-            style={({ pressed }) => [
-              styles.closeButton,
-              pressed && styles.pressed,
-            ]}
-          >
-            <Ionicons color={colors.text} name="close" size={18} />
-          </Pressable>
-        ) : null}
       </View>
 
       {sidebarQuery.isLoading ? (
         <View style={styles.stateContainer}>
           <ActivityIndicator color={colors.text} />
-          <Text style={styles.stateText}>Loading training data...</Text>
+          <Text style={styles.stateText}>Loading the day...</Text>
         </View>
       ) : sidebarQuery.error ? (
         <View style={styles.stateContainer}>
-          <Text style={styles.errorTitle}>Unable to load data</Text>
+          <Text style={styles.errorTitle}>Unable to load daily view</Text>
           <Text style={styles.errorText}>
             {sidebarErrorMessage(sidebarQuery.error)}
           </Text>
           <Pressable
-            accessibilityLabel="Retry loading training data"
+            accessibilityLabel="Retry loading daily view"
             accessibilityRole="button"
             onPress={() => sidebarQuery.refetch()}
             style={({ pressed }) => [
@@ -180,51 +204,61 @@ export function CoachDataSidebar({
       ) : (
         <ScrollView
           bounces={false}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: Math.max(bottomInset, spacing.xl) },
+          ]}
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.panelContent}>
-            <View style={styles.heroCard}>
-              <Text style={styles.heroEyebrow}>Today</Text>
-              <Text style={styles.heroTitle}>
-                {sidebarQuery.data?.todayPlan.title || "Check today's plan"}
-              </Text>
-              <Text style={styles.heroMetric}>
-                {sidebarQuery.data?.todayPlan.distance || '--'}
-              </Text>
+            <LinearGradient
+              colors={['#F3EBDD', '#E7D9C8', '#D5C0A8']}
+              end={{ x: 1, y: 1 }}
+              start={{ x: 0, y: 0 }}
+              style={styles.heroCard}
+            >
+              <View style={styles.heroTopRow}>
+                <Text style={styles.heroEyebrow}>Today&apos;s plan</Text>
+                <View style={styles.heroMetricPill}>
+                  <Text style={styles.heroMetricPillText}>{todayDistance}</Text>
+                </View>
+              </View>
+
+              <Text style={styles.heroTitle}>{todayPlanTitle}</Text>
+
               <Text style={styles.heroDetail}>
-                Open the day with intention, then let the coach conversation carry the rest.
+                {heroSummary}. Let the plan stay clear, then let the conversation do less.
               </Text>
+            </LinearGradient>
+
+            <View style={styles.metricsRow}>
+              <MetricTile label="Week" value={weekDistance} />
+              <MetricTile label="Runs" value={weekRuns} />
+              <MetricTile label="Pace" value={weekPace} />
             </View>
 
-            <SectionCard overline="Week" title="Current rhythm">
-              <View style={styles.statsRow}>
-                <WeekStat label="Distance" value={sidebarQuery.data?.thisWeek.km || '0'} />
-                <WeekStat
-                  label="Runs"
-                  value={sidebarQuery.data?.thisWeek.runs || '0'}
-                />
-                <WeekStat
-                  label="Pace"
-                  value={sidebarQuery.data?.thisWeek.avgPace || '--'}
-                />
-              </View>
-            </SectionCard>
-
-            <SectionCard overline="Recent" title="Last efforts">
-              {(sidebarQuery.data?.recentRuns ?? []).length ? (
-                (sidebarQuery.data?.recentRuns ?? []).map((run, index, runs) => (
+            <SectionCard eyebrow="Recent" title="What the body has been saying">
+              {recentRuns.length ? (
+                recentRuns.map((run, index) => (
                   <View
                     key={run.id}
                     style={[
                       styles.runRow,
-                      index === runs.length - 1 && styles.runRowLast,
+                      index === recentRuns.length - 1 && styles.runRowLast,
                     ]}
                   >
-                    <Text style={styles.runTitle}>{run.title}</Text>
-                    <Text style={styles.runSubtitle}>
-                      {run.subtitle || run.detail}
-                    </Text>
+                    <View style={styles.runMarker} />
+                    <View
+                      style={[
+                        styles.runCopy,
+                        index === recentRuns.length - 1 && styles.runRowLastCopy,
+                      ]}
+                    >
+                      <Text style={styles.runTitle}>{run.title}</Text>
+                      <Text style={styles.runSubtitle}>
+                        {run.subtitle || run.detail}
+                      </Text>
+                    </View>
                   </View>
                 ))
               ) : (
@@ -232,17 +266,9 @@ export function CoachDataSidebar({
               )}
             </SectionCard>
 
-            <SectionCard overline="Goal" title="What we are building toward">
-              <Text style={styles.goalTitle}>
-                {sidebarQuery.data?.goalProgress.title || 'Goal Progress'}
-              </Text>
-              <Text style={styles.goalCountdown}>
-                {sidebarQuery.data?.goalProgress.countdown || 'No race set'}
-              </Text>
-              <Text style={styles.goalDetail}>
-                {sidebarQuery.data?.goalProgress.detail ||
-                  'Set a race goal in the web app'}
-              </Text>
+            <SectionCard eyebrow="Horizon" title={goalTitle}>
+              <Text style={styles.goalCountdown}>{goalCountdown}</Text>
+              <Text style={styles.goalDetail}>{goalDetail}</Text>
             </SectionCard>
           </View>
         </ScrollView>
@@ -268,13 +294,6 @@ export function CoachDataSidebar({
 
   return (
     <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
-      <PanGestureHandler
-        onGestureEvent={handleEdgeGesture}
-        onHandlerStateChange={handleEdgeStateChange}
-      >
-        <View style={styles.edgeTrigger} />
-      </PanGestureHandler>
-
       <Animated.View
         pointerEvents={isOpen ? 'auto' : 'none'}
         style={[styles.scrim, { opacity: scrimOpacity }]}
@@ -289,14 +308,13 @@ export function CoachDataSidebar({
       >
         <Animated.View
           style={[
-            styles.panel,
+            styles.sheet,
             {
-              bottom: spacing.sm,
-              paddingBottom: Math.max(bottomInset, spacing.lg),
-              paddingTop: spacing.xl,
-              right: spacing.sm,
-              top: topInset + spacing.sm,
-              transform: [{ translateX }],
+              bottom: 0,
+              left: (width - panelWidth) / 2,
+              paddingTop: topInset + spacing.sm,
+              transform: [{ translateY }],
+              width: panelWidth,
             },
           ]}
         >
@@ -309,96 +327,103 @@ export function CoachDataSidebar({
 
 function SectionCard({
   children,
-  overline,
+  eyebrow,
   title,
 }: {
   children: React.ReactNode;
-  overline?: string;
+  eyebrow: string;
   title: string;
 }) {
   return (
     <View style={styles.section}>
-      {overline ? <Text style={styles.sectionOverline}>{overline}</Text> : null}
+      <Text style={styles.sectionEyebrow}>{eyebrow}</Text>
       <Text style={styles.sectionTitle}>{title}</Text>
       {children}
     </View>
   );
 }
 
-function WeekStat({ label, value }: { label: string; value: string }) {
+function MetricTile({ label, value }: { label: string; value: string }) {
   return (
-    <View style={styles.statCard}>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
+    <View style={styles.metricTile}>
+      <Text style={styles.metricValue}>{value}</Text>
+      <Text style={styles.metricLabel}>{label}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  edgeTrigger: {
-    ...StyleSheet.absoluteFillObject,
-    left: undefined,
-    width: 20,
-  },
   scrim: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: '#000000',
   },
-  panel: {
-    backgroundColor: 'rgba(22, 21, 20, 0.98)',
+  sheet: {
+    backgroundColor: 'rgba(13, 13, 14, 0.98)',
     borderColor: 'rgba(255, 255, 255, 0.08)',
-    borderRadius: 32,
+    borderRadius: 34,
     borderWidth: StyleSheet.hairlineWidth,
-    bottom: spacing.sm,
+    maxHeight: '86%',
     overflow: 'hidden',
     position: 'absolute',
-    right: spacing.sm,
     shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 20 },
-    shadowOpacity: 0.35,
+    shadowOffset: { width: 0, height: -12 },
+    shadowOpacity: 0.4,
     shadowRadius: 32,
-    top: spacing.sm,
-    width: FLOATING_PANEL_WIDTH,
   },
   dockedPanel: {
-    backgroundColor: colors.surface,
+    backgroundColor: '#0F0F10',
     borderLeftColor: colors.border,
     borderLeftWidth: StyleSheet.hairlineWidth,
     flex: 1,
     width: SIDEBAR_WIDTH,
   },
   panelHeader: {
-    alignItems: 'flex-start',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     paddingHorizontal: spacing.xl,
   },
+  grabber: {
+    alignSelf: 'center',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderRadius: radii.pill,
+    height: 4,
+    marginBottom: spacing.lg,
+    width: 44,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  headerCopy: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: spacing.md,
+  },
   panelEyebrow: {
-    color: colors.muted,
+    color: '#8E8E93',
     fontFamily: fonts.ui,
     fontSize: 11,
     fontWeight: '600',
-    letterSpacing: 2.2,
+    letterSpacing: 2,
     textTransform: 'uppercase',
   },
   panelTitle: {
-    color: colors.text,
+    color: '#F5F5F7',
     fontFamily: fonts.coach,
-    fontSize: 28,
-    lineHeight: 34,
+    fontSize: 31,
+    lineHeight: 36,
     marginTop: 6,
   },
   panelSubtitle: {
-    color: '#8B877F',
+    color: '#9A968F',
     fontSize: 13,
     lineHeight: 19,
     marginTop: spacing.sm,
-    maxWidth: 220,
+    maxWidth: 240,
   },
   closeButton: {
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderColor: 'rgba(255,255,255,0.08)',
     borderRadius: radii.pill,
     borderWidth: StyleSheet.hairlineWidth,
     height: 34,
@@ -406,135 +431,156 @@ const styles = StyleSheet.create({
     width: 34,
   },
   scrollContent: {
-    paddingBottom: spacing.xl,
-  },
-  panelContent: {
-    gap: spacing.lg,
-    paddingHorizontal: spacing.xl,
     paddingTop: spacing.xl,
   },
+  panelContent: {
+    gap: spacing.md,
+    paddingHorizontal: spacing.xl,
+  },
   heroCard: {
-    backgroundColor: '#F2EDE4',
-    borderRadius: 30,
+    borderRadius: 32,
+    overflow: 'hidden',
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.xl,
   },
+  heroTopRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
   heroEyebrow: {
-    color: '#6F675F',
+    color: '#5B534B',
     fontFamily: fonts.ui,
-    fontSize: 11,
-    fontWeight: '600',
-    letterSpacing: 1.9,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.8,
     textTransform: 'uppercase',
   },
-  heroTitle: {
-    color: '#111111',
-    fontFamily: fonts.coach,
-    fontSize: 30,
-    lineHeight: 36,
-    marginTop: spacing.sm,
+  heroMetricPill: {
+    backgroundColor: 'rgba(17, 17, 17, 0.08)',
+    borderRadius: radii.pill,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
   },
-  heroMetric: {
-    color: '#8B3A3A',
+  heroMetricPillText: {
+    color: '#4D463F',
     fontFamily: fonts.ui,
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '700',
-    letterSpacing: 0.3,
+  },
+  heroTitle: {
+    color: '#161312',
+    fontFamily: fonts.coach,
+    fontSize: 29,
+    lineHeight: 35,
     marginTop: spacing.md,
   },
   heroDetail: {
-    color: '#55514B',
+    color: '#5E5750',
     fontSize: 14,
     lineHeight: 20,
     marginTop: spacing.md,
   },
-  section: {
-    backgroundColor: 'rgba(255, 255, 255, 0.025)',
-    borderColor: 'rgba(255, 255, 255, 0.06)',
-    borderRadius: 30,
-    borderWidth: StyleSheet.hairlineWidth,
-    padding: spacing.xl,
-  },
-  sectionOverline: {
-    color: '#6F6A64',
-    fontFamily: fonts.ui,
-    fontSize: 10,
-    fontWeight: '600',
-    letterSpacing: 1.8,
-    textTransform: 'uppercase',
-  },
-  sectionTitle: {
-    color: colors.text,
-    fontFamily: fonts.coach,
-    fontSize: 24,
-    lineHeight: 30,
-    marginBottom: spacing.md,
-    marginTop: 6,
-  },
-  statsRow: {
+  metricsRow: {
     flexDirection: 'row',
     gap: spacing.sm,
   },
-  statCard: {
-    backgroundColor: 'rgba(255, 255, 255, 0.04)',
-    borderColor: 'rgba(255, 255, 255, 0.06)',
-    borderRadius: 22,
+  metricTile: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 24,
     borderWidth: StyleSheet.hairlineWidth,
     flex: 1,
-    minHeight: 88,
-    padding: spacing.md,
+    minHeight: 84,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 14,
   },
-  statValue: {
-    color: colors.text,
+  metricValue: {
+    color: '#F5F5F7',
     fontFamily: fonts.coach,
-    fontSize: 24,
-    lineHeight: 30,
+    fontSize: 22,
+    lineHeight: 28,
   },
-  statLabel: {
-    color: '#8B877F',
+  metricLabel: {
+    color: '#8E8E93',
     fontFamily: fonts.ui,
     fontSize: 10,
-    fontWeight: '600',
-    letterSpacing: 1.1,
+    fontWeight: '700',
+    letterSpacing: 1.4,
     marginTop: spacing.sm,
     textTransform: 'uppercase',
   },
+  section: {
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    borderColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 28,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.lg,
+  },
+  sectionEyebrow: {
+    color: '#76767B',
+    fontFamily: fonts.ui,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 1.7,
+    textTransform: 'uppercase',
+  },
+  sectionTitle: {
+    color: '#F5F5F7',
+    fontFamily: fonts.coach,
+    fontSize: 23,
+    lineHeight: 29,
+    marginBottom: spacing.md,
+    marginTop: 8,
+  },
   runRow: {
-    borderBottomColor: 'rgba(255, 255, 255, 0.07)',
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
     paddingVertical: spacing.md,
   },
   runRowLast: {
+    paddingBottom: 0,
+  },
+  runRowLastCopy: {
     borderBottomWidth: 0,
     paddingBottom: 0,
   },
+  runMarker: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#5B5B60',
+    borderRadius: radii.pill,
+    height: 7,
+    marginRight: 12,
+    marginTop: 8,
+    width: 7,
+  },
+  runCopy: {
+    borderBottomColor: 'rgba(255,255,255,0.06)',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    flex: 1,
+    minWidth: 0,
+    paddingBottom: spacing.md,
+  },
   runTitle: {
-    color: colors.text,
+    color: '#F5F5F7',
     fontFamily: fonts.coach,
     fontSize: 18,
     lineHeight: 24,
   },
   runSubtitle: {
-    color: '#8B877F',
+    color: '#9A968F',
     fontSize: 13,
     lineHeight: 19,
     marginTop: spacing.xs,
   },
-  goalTitle: {
-    color: colors.text,
-    fontFamily: fonts.coach,
-    fontSize: 20,
-    lineHeight: 26,
-  },
   goalCountdown: {
-    color: colors.text,
+    color: '#F5F5F7',
     fontFamily: fonts.coach,
-    fontSize: 34,
-    lineHeight: 40,
-    marginTop: spacing.sm,
+    fontSize: 36,
+    lineHeight: 42,
   },
   goalDetail: {
-    color: '#8B877F',
+    color: '#9A968F',
     fontSize: 14,
     lineHeight: 20,
     marginTop: spacing.sm,
@@ -545,18 +591,18 @@ const styles = StyleSheet.create({
     padding: spacing.xxl,
   },
   stateText: {
-    color: '#8B877F',
+    color: '#9A968F',
     marginTop: spacing.md,
   },
   errorTitle: {
-    color: colors.text,
+    color: '#F5F5F7',
     fontFamily: fonts.coach,
     fontSize: 20,
     lineHeight: 26,
     textAlign: 'center',
   },
   errorText: {
-    color: '#8B877F',
+    color: '#9A968F',
     lineHeight: 20,
     marginTop: spacing.sm,
     textAlign: 'center',
@@ -571,12 +617,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
   },
   retryButtonText: {
-    color: colors.text,
+    color: '#F5F5F7',
     fontSize: 14,
     fontWeight: '600',
   },
   emptyText: {
-    color: '#8B877F',
+    color: '#9A968F',
     lineHeight: 20,
   },
   pressed: {
