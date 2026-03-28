@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Animated,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -20,6 +21,7 @@ import { colors, fonts, radii, spacing } from '../../design/tokens';
 import { ApiError, getCoachSidebar } from '../../lib/api';
 
 const SIDEBAR_WIDTH = 280;
+const FLOATING_PANEL_WIDTH = 328;
 
 type CoachDataSidebarProps = {
   bottomInset: number;
@@ -131,8 +133,11 @@ export function CoachDataSidebar({
     <>
       <View style={styles.panelHeader}>
         <View>
-          <Text style={styles.panelEyebrow}>Data</Text>
-          <Text style={styles.panelTitle}>Training snapshot</Text>
+          <Text style={styles.panelEyebrow}>Daily View</Text>
+          <Text style={styles.panelTitle}>For the long run</Text>
+          <Text style={styles.panelSubtitle}>
+            Today&apos;s plan, your recent rhythm, and what the goal still asks of you.
+          </Text>
         </View>
         {!isDocked ? (
           <Pressable
@@ -173,49 +178,74 @@ export function CoachDataSidebar({
           </Pressable>
         </View>
       ) : (
-        <View style={styles.panelContent}>
-          <SectionCard title="This Week">
-            <View style={styles.statsRow}>
-              <WeekStat label="km" value={sidebarQuery.data?.thisWeek.km || '0'} />
-              <WeekStat
-                label="runs"
-                value={sidebarQuery.data?.thisWeek.runs || '0'}
-              />
-              <WeekStat
-                label="avg pace"
-                value={sidebarQuery.data?.thisWeek.avgPace || '--'}
-              />
+        <ScrollView
+          bounces={false}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={styles.panelContent}>
+            <View style={styles.heroCard}>
+              <Text style={styles.heroEyebrow}>Today</Text>
+              <Text style={styles.heroTitle}>
+                {sidebarQuery.data?.todayPlan.title || "Check today's plan"}
+              </Text>
+              <Text style={styles.heroMetric}>
+                {sidebarQuery.data?.todayPlan.distance || '--'}
+              </Text>
+              <Text style={styles.heroDetail}>
+                Open the day with intention, then let the coach conversation carry the rest.
+              </Text>
             </View>
-          </SectionCard>
 
-          <SectionCard title="Recent Runs">
-            {(sidebarQuery.data?.recentRuns ?? []).length ? (
-              (sidebarQuery.data?.recentRuns ?? []).map((run) => (
-                <View key={run.id} style={styles.runRow}>
-                  <Text style={styles.runTitle}>{run.title}</Text>
-                  <Text style={styles.runSubtitle}>
-                    {run.subtitle || run.detail}
-                  </Text>
-                </View>
-              ))
-            ) : (
-              <Text style={styles.emptyText}>No recent runs yet.</Text>
-            )}
-          </SectionCard>
+            <SectionCard overline="Week" title="Current rhythm">
+              <View style={styles.statsRow}>
+                <WeekStat label="Distance" value={sidebarQuery.data?.thisWeek.km || '0'} />
+                <WeekStat
+                  label="Runs"
+                  value={sidebarQuery.data?.thisWeek.runs || '0'}
+                />
+                <WeekStat
+                  label="Pace"
+                  value={sidebarQuery.data?.thisWeek.avgPace || '--'}
+                />
+              </View>
+            </SectionCard>
 
-          <SectionCard title="Goal Progress">
-            <Text style={styles.goalTitle}>
-              {sidebarQuery.data?.goalProgress.title || 'Goal Progress'}
-            </Text>
-            <Text style={styles.goalCountdown}>
-              {sidebarQuery.data?.goalProgress.countdown || 'No race set'}
-            </Text>
-            <Text style={styles.goalDetail}>
-              {sidebarQuery.data?.goalProgress.detail ||
-                'Set a race goal in the web app'}
-            </Text>
-          </SectionCard>
-        </View>
+            <SectionCard overline="Recent" title="Last efforts">
+              {(sidebarQuery.data?.recentRuns ?? []).length ? (
+                (sidebarQuery.data?.recentRuns ?? []).map((run, index, runs) => (
+                  <View
+                    key={run.id}
+                    style={[
+                      styles.runRow,
+                      index === runs.length - 1 && styles.runRowLast,
+                    ]}
+                  >
+                    <Text style={styles.runTitle}>{run.title}</Text>
+                    <Text style={styles.runSubtitle}>
+                      {run.subtitle || run.detail}
+                    </Text>
+                  </View>
+                ))
+              ) : (
+                <Text style={styles.emptyText}>No recent runs yet.</Text>
+              )}
+            </SectionCard>
+
+            <SectionCard overline="Goal" title="What we are building toward">
+              <Text style={styles.goalTitle}>
+                {sidebarQuery.data?.goalProgress.title || 'Goal Progress'}
+              </Text>
+              <Text style={styles.goalCountdown}>
+                {sidebarQuery.data?.goalProgress.countdown || 'No race set'}
+              </Text>
+              <Text style={styles.goalDetail}>
+                {sidebarQuery.data?.goalProgress.detail ||
+                  'Set a race goal in the web app'}
+              </Text>
+            </SectionCard>
+          </View>
+        </ScrollView>
       )}
     </>
   );
@@ -261,8 +291,11 @@ export function CoachDataSidebar({
           style={[
             styles.panel,
             {
+              bottom: spacing.sm,
               paddingBottom: Math.max(bottomInset, spacing.lg),
-              paddingTop: topInset + spacing.xl,
+              paddingTop: spacing.xl,
+              right: spacing.sm,
+              top: topInset + spacing.sm,
               transform: [{ translateX }],
             },
           ]}
@@ -276,13 +309,16 @@ export function CoachDataSidebar({
 
 function SectionCard({
   children,
+  overline,
   title,
 }: {
   children: React.ReactNode;
+  overline?: string;
   title: string;
 }) {
   return (
     <View style={styles.section}>
+      {overline ? <Text style={styles.sectionOverline}>{overline}</Text> : null}
       <Text style={styles.sectionTitle}>{title}</Text>
       {children}
     </View>
@@ -309,14 +345,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#000000',
   },
   panel: {
-    backgroundColor: colors.surface,
-    borderLeftColor: colors.border,
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    bottom: 0,
+    backgroundColor: 'rgba(22, 21, 20, 0.98)',
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 32,
+    borderWidth: StyleSheet.hairlineWidth,
+    bottom: spacing.sm,
+    overflow: 'hidden',
     position: 'absolute',
-    right: 0,
-    top: 0,
-    width: SIDEBAR_WIDTH,
+    right: spacing.sm,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.35,
+    shadowRadius: 32,
+    top: spacing.sm,
+    width: FLOATING_PANEL_WIDTH,
   },
   dockedPanel: {
     backgroundColor: colors.surface,
@@ -326,107 +368,173 @@ const styles = StyleSheet.create({
     width: SIDEBAR_WIDTH,
   },
   panelHeader: {
-    alignItems: 'center',
+    alignItems: 'flex-start',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.xl,
   },
   panelEyebrow: {
     color: colors.muted,
-    fontSize: 12,
-    letterSpacing: 2.5,
+    fontFamily: fonts.ui,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 2.2,
     textTransform: 'uppercase',
   },
   panelTitle: {
     color: colors.text,
     fontFamily: fonts.coach,
-    fontSize: 24,
-    lineHeight: 30,
-    marginTop: spacing.xs,
+    fontSize: 28,
+    lineHeight: 34,
+    marginTop: 6,
+  },
+  panelSubtitle: {
+    color: '#8B877F',
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: spacing.sm,
+    maxWidth: 220,
   },
   closeButton: {
     alignItems: 'center',
-    borderColor: colors.border,
+    backgroundColor: 'rgba(255, 255, 255, 0.03)',
+    borderColor: 'rgba(255, 255, 255, 0.08)',
     borderRadius: radii.pill,
     borderWidth: StyleSheet.hairlineWidth,
     height: 34,
     justifyContent: 'center',
     width: 34,
   },
+  scrollContent: {
+    paddingBottom: spacing.xl,
+  },
   panelContent: {
     gap: spacing.lg,
-    padding: spacing.lg,
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.xl,
+  },
+  heroCard: {
+    backgroundColor: '#F2EDE4',
+    borderRadius: 30,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.xl,
+  },
+  heroEyebrow: {
+    color: '#6F675F',
+    fontFamily: fonts.ui,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 1.9,
+    textTransform: 'uppercase',
+  },
+  heroTitle: {
+    color: '#111111',
+    fontFamily: fonts.coach,
+    fontSize: 30,
+    lineHeight: 36,
+    marginTop: spacing.sm,
+  },
+  heroMetric: {
+    color: '#8B3A3A',
+    fontFamily: fonts.ui,
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+    marginTop: spacing.md,
+  },
+  heroDetail: {
+    color: '#55514B',
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: spacing.md,
   },
   section: {
-    backgroundColor: colors.background,
-    borderColor: colors.border,
-    borderRadius: radii.card,
+    backgroundColor: 'rgba(255, 255, 255, 0.025)',
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 30,
     borderWidth: StyleSheet.hairlineWidth,
-    padding: spacing.lg,
+    padding: spacing.xl,
+  },
+  sectionOverline: {
+    color: '#6F6A64',
+    fontFamily: fonts.ui,
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 1.8,
+    textTransform: 'uppercase',
   },
   sectionTitle: {
     color: colors.text,
     fontFamily: fonts.coach,
-    fontSize: 18,
-    lineHeight: 24,
+    fontSize: 24,
+    lineHeight: 30,
     marginBottom: spacing.md,
+    marginTop: 6,
   },
   statsRow: {
     flexDirection: 'row',
     gap: spacing.sm,
   },
   statCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
-    borderRadius: radii.input,
+    backgroundColor: 'rgba(255, 255, 255, 0.04)',
+    borderColor: 'rgba(255, 255, 255, 0.06)',
+    borderRadius: 22,
     borderWidth: StyleSheet.hairlineWidth,
     flex: 1,
-    minHeight: 78,
+    minHeight: 88,
     padding: spacing.md,
   },
   statValue: {
     color: colors.text,
     fontFamily: fonts.coach,
-    fontSize: 22,
-    lineHeight: 28,
+    fontSize: 24,
+    lineHeight: 30,
   },
   statLabel: {
-    color: colors.muted,
-    fontSize: 11,
-    letterSpacing: 1.2,
+    color: '#8B877F',
+    fontFamily: fonts.ui,
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 1.1,
     marginTop: spacing.sm,
     textTransform: 'uppercase',
   },
   runRow: {
-    borderBottomColor: colors.border,
+    borderBottomColor: 'rgba(255, 255, 255, 0.07)',
     borderBottomWidth: StyleSheet.hairlineWidth,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.md,
+  },
+  runRowLast: {
+    borderBottomWidth: 0,
+    paddingBottom: 0,
   },
   runTitle: {
     color: colors.text,
-    fontSize: 15,
-    fontWeight: '600',
+    fontFamily: fonts.coach,
+    fontSize: 18,
+    lineHeight: 24,
   },
   runSubtitle: {
-    color: colors.muted,
+    color: '#8B877F',
     fontSize: 13,
-    lineHeight: 18,
+    lineHeight: 19,
     marginTop: spacing.xs,
   },
   goalTitle: {
     color: colors.text,
-    fontSize: 16,
-    fontWeight: '600',
+    fontFamily: fonts.coach,
+    fontSize: 20,
+    lineHeight: 26,
   },
   goalCountdown: {
     color: colors.text,
     fontFamily: fonts.coach,
-    fontSize: 28,
-    lineHeight: 34,
+    fontSize: 34,
+    lineHeight: 40,
     marginTop: spacing.sm,
   },
   goalDetail: {
-    color: colors.muted,
+    color: '#8B877F',
     fontSize: 14,
     lineHeight: 20,
     marginTop: spacing.sm,
@@ -437,7 +545,7 @@ const styles = StyleSheet.create({
     padding: spacing.xxl,
   },
   stateText: {
-    color: colors.muted,
+    color: '#8B877F',
     marginTop: spacing.md,
   },
   errorTitle: {
@@ -448,7 +556,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   errorText: {
-    color: colors.muted,
+    color: '#8B877F',
     lineHeight: 20,
     marginTop: spacing.sm,
     textAlign: 'center',
@@ -468,7 +576,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   emptyText: {
-    color: colors.muted,
+    color: '#8B877F',
     lineHeight: 20,
   },
   pressed: {

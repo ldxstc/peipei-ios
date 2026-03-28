@@ -926,6 +926,15 @@ function CoachScreenContent() {
     [coachSidebarQuery.data],
   );
   const visibleSessionSummary = sessionSummary || '🏃 Week 5 · Boston 29 days';
+  const dailyViewTitle = coachSidebarQuery.data?.todayPlan.title || 'Daily view';
+  const dailyViewDetail =
+    coachSidebarQuery.data?.todayPlan.distance &&
+    coachSidebarQuery.data.todayPlan.distance !== '--'
+      ? coachSidebarQuery.data.todayPlan.distance
+      : coachSidebarQuery.data?.thisWeek.avgPace &&
+          coachSidebarQuery.data.thisWeek.avgPace !== '--'
+        ? coachSidebarQuery.data.thisWeek.avgPace
+        : 'Open';
   const {
     chatItems,
     mergedMessagesDesc,
@@ -1834,6 +1843,39 @@ function CoachScreenContent() {
             </Pressable>
 
             <View style={styles.headerActions}>
+              {!isTabletLayout ? (
+                <Pressable
+                  accessibilityLabel={
+                    isSidebarOpen ? 'Close daily data view' : 'Open daily data view'
+                  }
+                  accessibilityRole="button"
+                  onPress={() => setIsSidebarOpen((current) => !current)}
+                  style={({ pressed }) => [
+                    styles.dailyViewButton,
+                    isSidebarOpen && styles.dailyViewButtonActive,
+                    pressed && styles.headerActionPressed,
+                  ]}
+                >
+                  <View style={styles.dailyViewButtonCopy}>
+                    <Text style={styles.dailyViewButtonEyebrow}>TODAY</Text>
+                    <Text
+                      numberOfLines={1}
+                      style={styles.dailyViewButtonTitle}
+                    >
+                      {dailyViewTitle}
+                    </Text>
+                  </View>
+                  <View style={styles.dailyViewButtonMeta}>
+                    <Text style={styles.dailyViewButtonMetaText}>{dailyViewDetail}</Text>
+                    <Ionicons
+                      color={isSidebarOpen ? '#F5F5F7' : '#8E8E93'}
+                      name={isSidebarOpen ? 'close-outline' : 'chevron-forward'}
+                      size={16}
+                    />
+                  </View>
+                </Pressable>
+              ) : null}
+
               <View style={styles.headerActionWrap}>
                 <Pressable
                   accessibilityLabel="Open settings"
@@ -3000,6 +3042,51 @@ const styles = StyleSheet.create({
   },
   headerActionWrap: {
     position: 'relative',
+  },
+  dailyViewButton: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(24, 24, 26, 0.82)',
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    gap: 10,
+    minHeight: 38,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  dailyViewButtonActive: {
+    backgroundColor: 'rgba(42, 42, 46, 0.96)',
+    borderColor: 'rgba(255, 255, 255, 0.14)',
+  },
+  dailyViewButtonCopy: {
+    flexShrink: 1,
+  },
+  dailyViewButtonEyebrow: {
+    color: '#6E6E73',
+    fontFamily: fonts.ui,
+    fontSize: 9,
+    fontWeight: '600',
+    letterSpacing: 1.4,
+  },
+  dailyViewButtonTitle: {
+    color: '#F5F5F7',
+    fontFamily: fonts.coach,
+    fontSize: 13,
+    lineHeight: 16,
+    marginTop: 1,
+    maxWidth: 112,
+  },
+  dailyViewButtonMeta: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 4,
+  },
+  dailyViewButtonMetaText: {
+    color: '#8E8E93',
+    fontFamily: fonts.ui,
+    fontSize: 11,
+    fontWeight: '600',
   },
   headerIconButton: {
     alignItems: 'center',
