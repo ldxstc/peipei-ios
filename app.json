@@ -14,7 +14,6 @@
     },
     "ios": {
       "buildNumber": "1",
-      "usesAppleSignIn": true,
       "infoPlist": {
         "NSCameraUsageDescription": "PeiPei uses the camera so you can attach workout photos to your coach chat.",
         "NSMicrophoneUsageDescription": "PeiPei uses the microphone so you can record voice messages for your coach.",
@@ -56,12 +55,9 @@
       "expo-font",
       "expo-sharing",
       "expo-audio",
-      "expo-asset",
-      "expo-web-browser",
-      "expo-apple-authentication"
+      "expo-asset"
     ],
     "extra": {
-      "googleClientId": "994446502706-4tnjlivm1e9g0a8ecv148fh9sm0bnd7o.apps.googleusercontent.com",
       "router": {},
       "eas": {
         "projectId": "bc1270fa-4266-4ae4-97d6-02077d3f9e2b"
