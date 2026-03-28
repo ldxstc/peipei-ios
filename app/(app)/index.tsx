@@ -32,6 +32,7 @@ import {
   Easing,
   FlatList,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   PanResponder,
   Platform,
@@ -1435,14 +1436,11 @@ function CoachScreenContent() {
   }
 
   function handleScrollToBottom() {
+    Keyboard.dismiss();
     listRef.current?.scrollToOffset({
       animated: true,
       offset: 0,
     });
-
-    setTimeout(() => {
-      inputRef.current?.focus();
-    }, 180);
   }
 
   async function submitMessage(options?: {
@@ -1843,39 +1841,6 @@ function CoachScreenContent() {
             </Pressable>
 
             <View style={styles.headerActions}>
-              {!isTabletLayout ? (
-                <Pressable
-                  accessibilityLabel={
-                    isSidebarOpen ? 'Close daily data view' : 'Open daily data view'
-                  }
-                  accessibilityRole="button"
-                  onPress={() => setIsSidebarOpen((current) => !current)}
-                  style={({ pressed }) => [
-                    styles.dailyViewButton,
-                    isSidebarOpen && styles.dailyViewButtonActive,
-                    pressed && styles.headerActionPressed,
-                  ]}
-                >
-                  <View style={styles.dailyViewButtonCopy}>
-                    <Text style={styles.dailyViewButtonEyebrow}>TODAY</Text>
-                    <Text
-                      numberOfLines={1}
-                      style={styles.dailyViewButtonTitle}
-                    >
-                      {dailyViewTitle}
-                    </Text>
-                  </View>
-                  <View style={styles.dailyViewButtonMeta}>
-                    <Text style={styles.dailyViewButtonMetaText}>{dailyViewDetail}</Text>
-                    <Ionicons
-                      color={isSidebarOpen ? '#F5F5F7' : '#8E8E93'}
-                      name={isSidebarOpen ? 'close-outline' : 'chevron-forward'}
-                      size={16}
-                    />
-                  </View>
-                </Pressable>
-              ) : null}
-
               <View style={styles.headerActionWrap}>
                 <Pressable
                   accessibilityLabel="Open settings"
@@ -1914,6 +1879,36 @@ function CoachScreenContent() {
               </Pressable>
             </View>
           </View>
+
+          {!isTabletLayout ? (
+            <Pressable
+              accessibilityLabel={
+                isSidebarOpen ? 'Close daily data view' : 'Open daily data view'
+              }
+              accessibilityRole="button"
+              onPress={() => setIsSidebarOpen((current) => !current)}
+              style={({ pressed }) => [
+                styles.phoneDailyViewButton,
+                isSidebarOpen && styles.dailyViewButtonActive,
+                pressed && styles.headerActionPressed,
+              ]}
+            >
+              <View style={styles.dailyViewButtonCopy}>
+                <Text style={styles.dailyViewButtonEyebrow}>TODAY</Text>
+                <Text numberOfLines={1} style={styles.dailyViewButtonTitle}>
+                  {dailyViewTitle}
+                </Text>
+              </View>
+              <View style={styles.dailyViewButtonMeta}>
+                <Text style={styles.dailyViewButtonMetaText}>{dailyViewDetail}</Text>
+                <Ionicons
+                  color={isSidebarOpen ? '#F5F5F7' : '#8E8E93'}
+                  name={isSidebarOpen ? 'close-outline' : 'chevron-forward'}
+                  size={16}
+                />
+              </View>
+            </Pressable>
+          ) : null}
 
           <View style={styles.headerDivider} />
         </View>
@@ -3043,6 +3038,20 @@ const styles = StyleSheet.create({
   headerActionWrap: {
     position: 'relative',
   },
+  phoneDailyViewButton: {
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    backgroundColor: 'rgba(24, 24, 26, 0.82)',
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderRadius: 18,
+    borderWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 14,
+    minHeight: 42,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
   dailyViewButton: {
     alignItems: 'center',
     backgroundColor: 'rgba(24, 24, 26, 0.82)',
@@ -3060,7 +3069,9 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.14)',
   },
   dailyViewButtonCopy: {
+    flex: 1,
     flexShrink: 1,
+    minWidth: 0,
   },
   dailyViewButtonEyebrow: {
     color: '#6E6E73',
@@ -3081,6 +3092,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexDirection: 'row',
     gap: 4,
+    marginLeft: 12,
   },
   dailyViewButtonMetaText: {
     color: '#8E8E93',
