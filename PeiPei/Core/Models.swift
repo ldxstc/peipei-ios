@@ -86,34 +86,84 @@ struct SocialPost: Codable, Hashable, Sendable {
 
 struct SidebarData: Codable, Sendable {
     let thisWeek: ThisWeekStats
-    let todayPlan: TodayPlan
-    let goalProgress: GoalProgress
     let recentRuns: [RecentRun]
+    let goalProgress: GoalProgress?
+
+    // Computed helpers for the view
+    var todayPlan: TodayPlan { TodayPlan(title: "Check with coach", distance: "--") }
 }
 
 struct ThisWeekStats: Codable, Sendable {
-    let km: String
-    let runs: String
-    let avgPace: String
+    let totalKm: Double?
+    let runCount: Int?
+    let avgPaceSeconds: Int?
+    let weeklyVolumes: [WeeklyVolume]?
+
+    var km: String {
+        guard let v = totalKm else { return "--" }
+        return v < 10 ? String(format: "%.1f", v) : String(format: "%.0f", v)
+    }
+    var runs: String { runCount.map(String.init) ?? "--" }
+    var avgPace: String {
+        guard let s = avgPaceSeconds, s > 0 else { return "--" }
+        return "\(s / 60):\(String(format: "%02d", s % 60))/km"
+    }
 }
 
-struct TodayPlan: Codable, Sendable {
+struct WeeklyVolume: Codable, Sendable, Identifiable {
+    let weekStart: String
+    let distanceKm: Double
+    let sessions: Int
+    var id: String { weekStart }
+}
+
+struct TodayPlan: Sendable {
     let title: String
     let distance: String
 }
 
 struct GoalProgress: Codable, Sendable {
-    let title: String
-    let countdown: String
-    let detail: String
+    let raceName: String?
+    let daysToRace: Int?
+    let currentWeek: Int?
+    let totalWeeks: Int?
+    let fitnessLabel: String?
+
+    var title: String { raceName ?? "No race set" }
+    var countdown: String {
+        guard let d = daysToRace else { return "" }
+        return "\(d) days"
+    }
+    var detail: String {
+        var parts: [String] = []
+        if let w = currentWeek, let t = totalWeeks { parts.append("Week \(w) of \(t)") }
+        if let f = fitnessLabel { parts.append(f) }
+        return parts.joined(separator: " · ")
+    }
 }
 
 struct RecentRun: Codable, Identifiable, Hashable, Sendable {
     let id: String
-    let title: String
-    let subtitle: String
-    let detail: String
-    let date: String?
+    let activityDate: String?
+    let workoutType: String?
+    let distanceKm: Double?
+    let pacePerKmSeconds: Int?
+    let avgHr: Int?
+
+    var title: String { workoutType?.replacingOccurrences(of: "_", with: " ").capitalized ?? "Run" }
+    var subtitle: String {
+        guard let d = distanceKm else { return "--" }
+        return d < 10 ? String(format: "%.1f km", d) : String(format: "%.0f km", d)
+    }
+    var detail: String {
+        guard let s = pacePerKmSeconds, s > 0 else { return "--" }
+        return "\(s / 60):\(String(format: "%02d", s % 60))/km"
+    }
+    var date: String? { activityDate }
+    var hrLabel: String? {
+        guard let hr = avgHr else { return nil }
+        return "\(hr) bpm"
+    }
 }
 
 struct SettingsPanelResponse: Codable, Sendable {
