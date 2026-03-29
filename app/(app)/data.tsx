@@ -91,8 +91,9 @@ export default function DataScreen() {
         !dataQuery.data?.goalProgress.title &&
         !dataQuery.data?.recentRuns.length ? (
         <View style={styles.stateBlock}>
+          <Text style={styles.emptyTitle}>No training data yet</Text>
           <Text style={styles.emptyText}>
-            Connect Garmin in Settings to see your data
+            Connect your Garmin watch in Settings to see your weekly volume, pace trends, and race countdown here.
           </Text>
         </View>
       ) : (
@@ -108,23 +109,35 @@ export default function DataScreen() {
 
           <Section label="Today's Plan">
             <Text style={styles.serifValue}>
-              {dataQuery.data?.todayPlan.title || 'No plan today'}
+              {dataQuery.data?.todayPlan.title || 'Rest day'}
             </Text>
-            <Text style={styles.valueSupporting}>
-              {dataQuery.data?.todayPlan.distance || 'Listen to your legs.'}
-            </Text>
+            {dataQuery.data?.todayPlan.distance && dataQuery.data.todayPlan.distance !== '--' ? (
+              <Text style={styles.valueSupporting}>
+                {dataQuery.data.todayPlan.distance}
+              </Text>
+            ) : (
+              <Text style={styles.valueSupporting}>Listen to your legs.</Text>
+            )}
           </Section>
 
           <Section label="Goal">
             <Text style={styles.serifValue}>
-              {dataQuery.data?.goalProgress.title || 'No goal set'}
+              {dataQuery.data?.goalProgress.title || 'No race set'}
             </Text>
-            <Text style={styles.valueSupporting}>
-              {dataQuery.data?.goalProgress.countdown || 'Set a race to track it here'}
-            </Text>
-            <Text style={styles.valueSupporting}>
-              {dataQuery.data?.goalProgress.detail || ''}
-            </Text>
+            {dataQuery.data?.goalProgress.countdown ? (
+              <Text style={styles.goalCountdown}>
+                {dataQuery.data.goalProgress.countdown}
+              </Text>
+            ) : (
+              <Text style={styles.valueSupporting}>
+                Tell your coach about an upcoming race
+              </Text>
+            )}
+            {dataQuery.data?.goalProgress.detail ? (
+              <Text style={styles.valueSupporting}>
+                {dataQuery.data.goalProgress.detail}
+              </Text>
+            ) : null}
           </Section>
 
           <Section label="Recent Runs">
@@ -180,10 +193,18 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: 20,
   },
+  emptyTitle: {
+    color: colors.text,
+    fontFamily: fonts.coach,
+    fontSize: 22,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
   emptyText: {
     color: colors.textSecondary,
-    fontSize: 16,
+    fontSize: 15,
     lineHeight: 24,
+    maxWidth: 280,
     textAlign: 'center',
   },
   label: {
@@ -265,6 +286,13 @@ const styles = StyleSheet.create({
   },
   valueRow: {
     marginBottom: 20,
+  },
+  goalCountdown: {
+    color: colors.metricPace,
+    fontFamily: fonts.mono,
+    fontSize: 15,
+    fontWeight: '600',
+    marginTop: 6,
   },
   valueSupporting: {
     color: colors.textSecondary,
