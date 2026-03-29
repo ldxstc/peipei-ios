@@ -1,5 +1,4 @@
 import SwiftUI
-import Charts
 
 struct DataView: View {
     @Environment(AppModel.self) private var appModel
@@ -10,16 +9,23 @@ struct DataView: View {
             Group {
                 if let data = viewModel.sidebarData {
                     ScrollView {
-                        LazyVStack(spacing: 20) {
-                            thisWeekCard(data)
-                            if let goal = data.goalProgress {
-                                goalCard(goal)
+                        LazyVStack(alignment: .leading, spacing: 24) {
+                            if data.thisWeek.totalKm != nil {
+                                thisWeekSection(data.thisWeek)
                             }
-                            recentRunsCard(data)
+                            if !data.recentRuns.isEmpty {
+                                recentRunsSection(data.recentRuns)
+                            }
+                            if let goal = data.goalProgress {
+                                goalSection(goal)
+                            }
+                            if let body = data.body {
+                                bodySection(body)
+                            }
                         }
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, 20)
                         .padding(.top, 8)
-                        .padding(.bottom, 32)
+                        .padding(.bottom, 80)
                     }
                 } else if viewModel.isLoading {
                     ProgressView()
@@ -30,7 +36,7 @@ struct DataView: View {
                         ContentUnavailableView(
                             "No training data yet",
                             systemImage: "figure.run",
-                            description: Text("Connect your Garmin to see your weekly volume, pace trends, and race countdown.")
+                            description: Text("Connect your Garmin to see your data here.")
                         )
                         NavigationLink("Open Settings") {
                             SettingsView()
@@ -50,197 +56,200 @@ struct DataView: View {
 
     // MARK: - This Week
 
-    private func thisWeekCard(_ data: SidebarData) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("THIS WEEK")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.tertiary)
-                .tracking(1.0)
-
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(data.thisWeek.km)
-                    .font(.system(size: 48, weight: .ultraLight, design: .rounded))
+    private func thisWeekSection(_ week: ThisWeekStats) -> some View {
+        SectionBlock(title: "This Week") {
+            // Volume row
+            dataRow(label: "Volume") {
+                Text("\(week.km) km")
+                    .font(.system(.body, design: .serif))
                     .foregroundStyle(Color("Cream"))
-                Text("km")
-                    .font(.system(size: 18, weight: .regular))
-                    .foregroundStyle(.secondary)
             }
 
-            // Weekly volume chart
-            if let volumes = data.thisWeek.weeklyVolumes, !volumes.isEmpty {
-                Chart(volumes) { week in
-                    BarMark(
-                        x: .value("Week", String(week.weekStart.suffix(5))),
-                        y: .value("KM", week.distanceKm)
-                    )
-                    .foregroundStyle(
-                        week.weekStart == volumes.last?.weekStart
-                            ? Color("Amber").gradient
-                            : Color("Amber").opacity(0.55).gradient
-                    )
-                    .cornerRadius(4)
-                    .annotation(position: .top, spacing: 4) {
-                        Text(String(format: "%.0f", week.distanceKm))
-                            .font(.system(size: 9, weight: .medium, design: .monospaced))
-                            .foregroundStyle(Color("Amber").opacity(0.6))
-                    }
-                }
-                .chartYAxis(.hidden)
-                .chartXAxis {
-                    AxisMarks { _ in
-                        AxisValueLabel()
-                            .font(.system(size: 10))
-                            .foregroundStyle(Color("Amber").opacity(0.6))
-                    }
-                }
-                .frame(height: 80)
+            // Runs + Avg Pace grid
+            HStack(spacing: 0) {
+                miniStat(label: "Runs", value: week.runs)
+                miniStat(label: "Avg Pace", value: week.avgPace)
             }
 
-            HStack(spacing: 10) {
-                statPill(label: "Runs", value: data.thisWeek.runs)
-                statPill(label: "Avg Pace", value: data.thisWeek.avgPace)
-            }
-        }
-        .padding(20)
-        .background(Color("Surface"), in: .rect(cornerRadius: 18, style: .continuous))
-    }
-
-    // MARK: - Goal
-
-    private func goalCard(_ goal: GoalProgress) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("GOAL")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.tertiary)
-                .tracking(1.0)
-
-            HStack(spacing: 16) {
-                // Progress ring
-                ZStack {
-                    Circle()
-                        .strokeBorder(Color("Amber").opacity(0.15), lineWidth: 4)
-                    Circle()
-                        .trim(from: 0, to: CGFloat(goal.currentWeek ?? 0) / CGFloat(max(goal.totalWeeks ?? 16, 1)))
-                        .stroke(Color("Amber"), style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                    Text("\(goal.daysToRace ?? 0)")
-                        .font(.system(size: 16, weight: .bold, design: .monospaced))
-                        .foregroundStyle(Color("Amber"))
-                }
-                .frame(width: 56, height: 56)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(goal.title)
-                        .font(.system(.headline, design: .serif))
+            // Trend glyph
+            if let glyph = week.trendGlyph, !glyph.isEmpty {
+                dataRow(label: "Trend") {
+                    Text(glyph)
+                        .font(.system(size: 14, design: .monospaced))
+                        .tracking(3)
                         .foregroundStyle(Color("Cream"))
-                    if !goal.countdown.isEmpty {
-                        Text(goal.countdown + " to go")
-                            .font(.subheadline)
-                            .foregroundStyle(Color("Amber"))
-                    }
-                    if !goal.detail.isEmpty {
-                        Text(goal.detail)
-                            .font(.caption)
-                            .foregroundStyle(Color("Amber").opacity(0.6))
-                    }
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .background(Color("Surface"), in: .rect(cornerRadius: 18, style: .continuous))
     }
 
     // MARK: - Recent Runs
 
-    private func recentRunsCard(_ data: SidebarData) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("RECENT RUNS")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.tertiary)
-                .tracking(1.0)
+    private func recentRunsSection(_ runs: [RecentRun]) -> some View {
+        SectionBlock(title: "Recent Runs") {
+            ForEach(runs) { run in
+                HStack(spacing: 0) {
+                    Text(run.shortDate)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 48, alignment: .leading)
 
-            if data.recentRuns.isEmpty {
-                Text("No runs synced yet.")
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 8)
-            } else {
-                ForEach(data.recentRuns) { run in
-                    runRow(run)
-                    if run.id != data.recentRuns.last?.id {
-                        Divider().overlay(Color.white.opacity(0.04))
+                    Text(run.title.lowercased())
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color("Cream"))
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    Text(run.subtitle)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(Color("Cream"))
+                        .frame(width: 44, alignment: .trailing)
+
+                    Text(run.detail)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 52, alignment: .trailing)
+                }
+                .padding(.vertical, 6)
+                .padding(.horizontal, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.white.opacity(0.02))
+                )
+            }
+        }
+    }
+
+    // MARK: - Goal Progress
+
+    private func goalSection(_ goal: GoalProgress) -> some View {
+        SectionBlock(title: "Goal Progress") {
+            // Race name
+            Text(goal.title)
+                .font(.system(.body, design: .serif))
+                .foregroundStyle(Color("Cream"))
+                .padding(.horizontal, 8)
+
+            // Stats grid
+            VStack(spacing: 6) {
+                dataRow(label: "Days") {
+                    Text(goal.daysToRace != nil ? "\(goal.daysToRace!)" : "--")
+                        .font(.system(size: 13, design: .monospaced))
+                        .foregroundStyle(Color("Cream"))
+                }
+                dataRow(label: "Block") {
+                    Text(goal.blockLabel)
+                        .font(.system(size: 13, design: .monospaced))
+                        .foregroundStyle(Color("Cream"))
+                }
+                if let fitness = goal.fitnessValue {
+                    dataRow(label: "Fitness") {
+                        Text("VDOT \(String(format: "%.1f", fitness))")
+                            .font(.system(size: 13, design: .monospaced))
+                            .foregroundStyle(Color("Cream"))
                     }
                 }
             }
+
+            // Progress bar
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(Color("Amber").opacity(0.15))
+                        .frame(height: 2)
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(Color("Garnet"))
+                        .frame(width: geo.size.width * CGFloat(goal.progressPercent ?? 0) / 100, height: 2)
+                }
+            }
+            .frame(height: 2)
+            .padding(.horizontal, 8)
+
+            if let label = goal.fitnessLabel {
+                Text(label.uppercased())
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .tracking(1)
+                    .padding(.horizontal, 8)
+            }
         }
-        .padding(20)
-        .background(Color("Surface"), in: .rect(cornerRadius: 18, style: .continuous))
     }
 
-    private func runRow(_ run: RecentRun) -> some View {
-        HStack(spacing: 12) {
-            // Workout type icon
-            Image(systemName: runIcon(for: run.workoutType))
-                .font(.system(size: 14))
-                .foregroundStyle(Color("Amber"))
-                .frame(width: 28, height: 28)
-                .background(Color("Amber").opacity(0.08), in: .circle)
+    // MARK: - Body
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(run.title)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(Color("Cream"))
-                if let date = run.date {
-                    Text(date)
-                        .font(.caption)
-                        .foregroundStyle(Color("Amber").opacity(0.6))
+    private func bodySection(_ body: BodyStats) -> some View {
+        SectionBlock(title: "Body") {
+            if let weight = body.latestWeightKg {
+                dataRow(label: "Weight") {
+                    Text("\(String(format: "%.1f", weight)) kg")
+                        .font(.system(size: 13, design: .monospaced))
+                        .foregroundStyle(Color("Cream"))
                 }
             }
 
-            Spacer()
+            if let hr = body.restingHr {
+                VStack(spacing: 4) {
+                    dataRow(label: "Resting HR") {
+                        Text("\(Int(hr)) bpm")
+                            .font(.system(size: 13, design: .monospaced))
+                            .foregroundStyle(Color("Cream"))
+                    }
 
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(run.subtitle)
-                    .font(.system(.subheadline, design: .monospaced).weight(.medium))
-                    .foregroundStyle(Color("Cream"))
-                Text(run.detail)
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(Color("Amber"))
-            }
-
-            if let hr = run.hrLabel {
-                Text(hr)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(Color("Amber").opacity(0.6))
+                    HStack {
+                        if let glyph = body.restingHrGlyph {
+                            Text(glyph)
+                                .font(.system(size: 11, design: .monospaced))
+                                .tracking(3)
+                                .foregroundStyle(.tertiary)
+                        }
+                        Spacer()
+                        if let delta = body.restingHrDelta {
+                            Text(delta > 0 ? "+\(delta) bpm" : "\(delta) bpm")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(.tertiary)
+                        } else {
+                            Text("steady")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                }
             }
         }
-        .padding(.vertical, 6)
     }
 
-    private func statPill(label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(.secondary)
+    // MARK: - Helpers
+
+    private func dataRow<Content: View>(label: String, @ViewBuilder content: () -> Content) -> some View {
+        HStack {
+            Text(label.uppercased())
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.tertiary)
+                .tracking(0.8)
+            Spacer()
+            content()
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+    }
+
+    private func miniStat(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label.uppercased())
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.tertiary)
+                .tracking(0.8)
             Text(value)
-                .font(.system(.subheadline, design: .monospaced).weight(.semibold))
+                .font(.system(size: 13, design: .monospaced))
                 .foregroundStyle(Color("Cream"))
         }
-        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color("Amber").opacity(0.10), in: .rect(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color("Amber").opacity(0.12), lineWidth: 0.5))
-    }
-
-    private func runIcon(for type: String?) -> String {
-        switch type {
-        case "long_run": return "figure.run"
-        case "tempo": return "bolt.fill"
-        case "interval", "speed": return "timer"
-        case "easy": return "leaf.fill"
-        case "recovery": return "heart.fill"
-        default: return "figure.run"
-        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.white.opacity(0.02))
+        )
     }
 
     private func load() async {
@@ -251,5 +260,25 @@ struct DataView: View {
     private func refresh() async {
         guard let token = appModel.sessionToken else { return }
         await viewModel.syncAndReload(token: token)
+    }
+}
+
+// MARK: - Section Block
+
+struct SectionBlock<Content: View>: View {
+    let title: String
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title.uppercased())
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.tertiary)
+                .tracking(1.5)
+
+            VStack(alignment: .leading, spacing: 6) {
+                content
+            }
+        }
     }
 }

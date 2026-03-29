@@ -89,7 +89,8 @@ struct SidebarData: Codable, Sendable {
     let recentRuns: [RecentRun]
     let goalProgress: GoalProgress?
 
-    // Computed helpers for the view
+    let body: BodyStats?
+
     var todayPlan: TodayPlan { TodayPlan(title: "Check with coach", distance: "--") }
 }
 
@@ -97,6 +98,7 @@ struct ThisWeekStats: Codable, Sendable {
     let totalKm: Double?
     let runCount: Int?
     let avgPaceSeconds: Int?
+    let trendGlyph: String?
     let weeklyVolumes: [WeeklyVolume]?
 
     var km: String {
@@ -128,6 +130,13 @@ struct GoalProgress: Codable, Sendable {
     let currentWeek: Int?
     let totalWeeks: Int?
     let fitnessLabel: String?
+    let fitnessValue: Double?
+    let progressPercent: Double?
+
+    var blockLabel: String {
+        guard let w = currentWeek, let t = totalWeeks else { return "--" }
+        return "Week \(w) / \(t)"
+    }
 
     var title: String { raceName ?? "No race set" }
     var countdown: String {
@@ -160,10 +169,24 @@ struct RecentRun: Codable, Identifiable, Hashable, Sendable {
         return "\(s / 60):\(String(format: "%02d", s % 60))/km"
     }
     var date: String? { activityDate }
+    var shortDate: String {
+        guard let d = activityDate else { return "--" }
+        let parts = d.split(separator: "-")
+        guard parts.count == 3 else { return d }
+        return "\(parts[1])/\(parts[2])"
+    }
     var hrLabel: String? {
         guard let hr = avgHr else { return nil }
         return "\(hr) bpm"
     }
+}
+
+struct BodyStats: Codable, Sendable {
+    let latestWeightKg: Double?
+    let latestWeightDate: String?
+    let restingHr: Double?
+    let restingHrDelta: Int?
+    let restingHrGlyph: String?
 }
 
 struct SettingsPanelResponse: Codable, Sendable {
