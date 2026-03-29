@@ -78,13 +78,16 @@ struct PeiPeiApp: App {
 
 private struct RootTabView: View {
     var body: some View {
-        TabView {
+        @State var selectedTab = "coach"
+            TabView(selection: $selectedTab) {
             CoachJournalView()
+                .tag("coach")
                 .tabItem {
                     Label("Coach", systemImage: "text.bubble")
                 }
 
             DataView()
+                .tag("data")
                 .tabItem {
                     Label("Data", systemImage: "chart.bar")
                 }

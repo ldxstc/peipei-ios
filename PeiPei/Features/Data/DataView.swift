@@ -19,11 +19,18 @@ struct DataView: View {
                         .tint(Color("Cream"))
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    ContentUnavailableView(
-                        "No training data yet.",
-                        systemImage: "figure.run",
-                        description: Text("Connect Garmin in Settings.")
-                    )
+                    VStack(spacing: 16) {
+                        ContentUnavailableView(
+                            "No training data yet",
+                            systemImage: "figure.run",
+                            description: Text("Connect your Garmin to see your weekly volume, pace trends, and race countdown.")
+                        )
+                        NavigationLink("Open Settings") {
+                            SettingsView()
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(Color("Amber"))
+                    }
                 }
             }
             .scrollContentBackground(.hidden)
