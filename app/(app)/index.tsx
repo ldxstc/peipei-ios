@@ -946,7 +946,7 @@ function CoachScreenContent() {
                     <Text style={styles.closingNoteText}>Rest well. Your coach will be here tomorrow.</Text>
                   </View>
                 ) : null}
-                <View style={{ height: 80 }} />
+                <View style={{ height: 20 }} />
               </View>
             }
             ListFooterComponent={<View style={{ height: 12 }} />}
@@ -957,7 +957,7 @@ function CoachScreenContent() {
           style={[
             styles.composerShell,
             {
-              paddingBottom: Math.max(insets.bottom, 12),
+              paddingBottom: 8,
             },
           ]}
         >
