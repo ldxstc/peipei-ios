@@ -1106,9 +1106,23 @@ function MessageRow({
 
   const { firstLine, rest } = splitCoachMessage(cleanedContent);
   const coachUsesSystemFont = containsCjk(cleanedContent);
+  const metrics = extractMetrics(cleanedContent);
 
   return (
     <Pressable onLongPress={onReply} style={styles.coachRow}>
+      {metrics.length > 0 ? (
+        <View style={styles.metricBlock}>
+          <View style={styles.metricRow}>
+            {metrics.map((m, i) => (
+              <View key={i} style={styles.metricChip}>
+                <Text style={styles.metricLabel}>{m.label}</Text>
+                <Text style={styles.metricValue}>{m.value}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      ) : null}
+
       {message.messageType === 'social_post' && message.socialPost?.imageUrl ? (
         <View style={styles.socialPostCard}>
           <Image source={{ uri: message.socialPost.imageUrl }} style={styles.socialImage} />
@@ -1307,11 +1321,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   coachRow: {
-    borderLeftColor: 'rgba(242,237,228,0.08)',
-    borderLeftWidth: 2,
+    backgroundColor: '#181816',
+    borderColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 20,
+    borderWidth: 1,
+    marginHorizontal: 16,
     marginTop: 20,
-    paddingHorizontal: 20,
-    paddingLeft: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
   },
   compactHeaderTitle: {
     color: colors.text,
