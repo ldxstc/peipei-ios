@@ -135,6 +135,8 @@ struct APIClient: Sendable {
         request.httpMethod = method
         request.timeoutInterval = 60
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("https://www.peipei-run.com", forHTTPHeaderField: "Origin")
+        request.setValue("https://www.peipei-run.com", forHTTPHeaderField: "Referer")
         if method != "GET" {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
