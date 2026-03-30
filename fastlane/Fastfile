@@ -1,0 +1,48 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Distribute latest build to all beta testers"
+  lane :distribute do
+    # Use App Store Connect API key
+    api_key = app_store_connect_api_key(
+      key_id: ENV["ASC_KEY_ID"],
+      issuer_id: ENV["ASC_ISSUER_ID"],
+      key_filepath: ENV["ASC_KEY_PATH"],
+    )
+
+    # Add the latest build to the beta group
+    pilot(
+      api_key: api_key,
+      app_identifier: "com.peipei.app",
+      distribute_external: true,
+      notify_external_testers: true,
+      groups: ["External Testers"],
+      skip_waiting_for_build_processing: false,
+    )
+  end
+
+  desc "Build, export, upload, and distribute"
+  lane :ship do
+    # Build
+    build_app(
+      scheme: "PeiPei",
+      export_method: "app-store",
+      export_options: {
+        signingStyle: "automatic",
+        teamID: "MNB3V4MHFJ",
+      }
+    )
+
+    # Upload + distribute
+    pilot(
+      api_key: app_store_connect_api_key(
+        key_id: ENV["ASC_KEY_ID"],
+        issuer_id: ENV["ASC_ISSUER_ID"],
+        key_filepath: ENV["ASC_KEY_PATH"],
+      ),
+      distribute_external: true,
+      notify_external_testers: true,
+      groups: ["External Testers"],
+    )
+  end
+end
