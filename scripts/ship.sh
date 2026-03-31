@@ -81,7 +81,7 @@ echo "   (This typically takes 5-15 minutes)"
 
 # Use fastlane pilot to wait for processing and distribute
 echo "🚀 Distributing to testers..."
-fastlane pilot distribute \
+LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 fastlane pilot distribute \
     --api_key_path <(cat << JSON
 {
     "key_id": "${ASC_KEY_ID}",
@@ -93,7 +93,8 @@ JSON
     --app_identifier "com.peipei.app" \
     --distribute_external true \
     --notify_external_testers true \
-    --groups "External Testers" \
+    --app_platform "ios" \
+  --groups "External Testers" \
     --app_version "$VERSION" \
     --build_number "$NEW_BUILD"
 
