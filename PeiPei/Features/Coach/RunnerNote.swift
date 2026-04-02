@@ -5,18 +5,14 @@ struct RunnerNote: View {
 
     var body: some View {
         HStack {
-            Spacer(minLength: 80)
+            Spacer(minLength: 60)
 
             Text(message.content)
                 .font(.subheadline)
                 .foregroundStyle(Color("Cream"))
                 .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 20, style: .continuous)
-                        .stroke(Color.white.opacity(0.08), lineWidth: 0.5)
-                )
+                .padding(.vertical, 10)
+                .background(Color("Garnet").opacity(0.35), in: .rect(cornerRadius: 18, style: .continuous))
         }
     }
 }

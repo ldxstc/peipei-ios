@@ -109,7 +109,7 @@ struct CoachJournalView: View {
     private func dayHeader(for date: Date) -> some View {
         Text(date.formatted(.dateTime.weekday(.wide).month(.abbreviated).day()))
             .font(.caption.weight(.semibold))
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.vertical, 8)
     }

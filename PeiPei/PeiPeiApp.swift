@@ -72,6 +72,7 @@ struct PeiPeiApp: App {
                 }
             }
             .environment(appModel)
+            .preferredColorScheme(.dark)
         }
     }
 }

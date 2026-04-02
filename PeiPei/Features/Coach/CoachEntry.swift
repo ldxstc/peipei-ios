@@ -101,7 +101,7 @@ struct CoachEntry: View {
                     let displayText = isLong && !isExpanded ? String(bodyText.prefix(80)) : bodyText
                     Text(displayText)
                         .font(entryFont(size: 14, weight: .regular))
-                        .foregroundStyle(Color("TextSecondary"))
+                        .foregroundStyle(.secondary)
                         .lineSpacing(7)
 
                     if isLong && !isExpanded {
