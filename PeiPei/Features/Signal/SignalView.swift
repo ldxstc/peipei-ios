@@ -3,7 +3,11 @@ import SwiftUI
 struct SignalView: View {
     @Environment(AppModel.self) private var app
     @AppStorage("signal.hasSeenPullHint") private var hasSeenPullHint = false
+    #if DEBUG
+    @State private var showConversation = true
+    #else
     @State private var showConversation = false
+    #endif
     @State private var showReasoning = false
     @State private var showPlan = false
 

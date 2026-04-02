@@ -20,6 +20,7 @@
 		6CF3C8B3517CDA14B02F981B /* PlanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D80DD39EDA4230C1523EA47 /* PlanView.swift */; };
 		6F316A0653EA961AB96FB490 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8938750CAD1707E43441B5FA /* APIClient.swift */; };
 		83149FCB02C8F0876EF27011 /* MarkupCleaner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6570A7B0909E4F54AC08427F /* MarkupCleaner.swift */; };
+		BD24A4ADF103EE4D50E14E06 /* LogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 492EA7ED8B74E0B14FF70A46 /* LogView.swift */; };
 		C2C83BE65840C31608E7C25D /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D53F8789B2E8F297BE7EBD96 /* KeychainHelper.swift */; };
 		C613C6073A8B291E96DD1071 /* ComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF6F669AB45258C9D6053352 /* ComposerView.swift */; };
 		C68424BD8E17FF93FB81D67A /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FB91B64D0B10038953BC7FE /* LoginView.swift */; };
@@ -28,6 +29,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		492EA7ED8B74E0B14FF70A46 /* LogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogView.swift; sourceTree = "<group>"; };
 		504A3ECC64732183D1F298B6 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		543E3F6BDD82A463E199575E /* RunnerNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerNote.swift; sourceTree = "<group>"; };
 		5AE0EAC40CDCDFA70E314ED3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -65,6 +67,7 @@
 				C46A66688E41DA3C2BA080A2 /* CoachEntry.swift */,
 				CF6F669AB45258C9D6053352 /* ComposerView.swift */,
 				B4A914069CA903B9462EF278 /* ConversationView.swift */,
+				492EA7ED8B74E0B14FF70A46 /* LogView.swift */,
 				543E3F6BDD82A463E199575E /* RunnerNote.swift */,
 			);
 			path = Conversation;
@@ -235,6 +238,7 @@
 				0A6159651CAAE3EB6F6B3DBD /* ConversationView.swift in Sources */,
 				0A77BE5B18E71F9EB884CFBB /* DesignTokens.swift in Sources */,
 				C2C83BE65840C31608E7C25D /* KeychainHelper.swift in Sources */,
+				BD24A4ADF103EE4D50E14E06 /* LogView.swift in Sources */,
 				C68424BD8E17FF93FB81D67A /* LoginView.swift in Sources */,
 				83149FCB02C8F0876EF27011 /* MarkupCleaner.swift in Sources */,
 				5414FB054AFC3D4F6464E344 /* MetricExtractor.swift in Sources */,

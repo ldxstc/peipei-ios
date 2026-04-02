@@ -5,6 +5,7 @@ struct ConversationView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var composerText = ""
     @State private var selectedRun: RunDetail?
+    @State private var showLog = false
     @State private var showSettings = false
 
     private var daySections: [DaySection] {
@@ -72,6 +73,10 @@ struct ConversationView: View {
             }
             .presentationBackground(DesignTokens.background)
         }
+        .sheet(isPresented: $showLog) {
+            LogView()
+                .presentationBackground(DesignTokens.background)
+        }
     }
 
     private var directiveBar: some View {
@@ -95,6 +100,14 @@ struct ConversationView: View {
                 }
             }
             .buttonStyle(.plain)
+
+            Spacer()
+
+            Button("Log") {
+                showLog = true
+            }
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(DesignTokens.textSecondary)
 
             Spacer()
 
