@@ -85,15 +85,28 @@ private struct RootTabView: View {
             CoachJournalView()
                 .tag("coach")
                 .tabItem {
-                    Text("Coach")
+                    Label("Coach", systemImage: "bubble.left.and.bubble.right")
                 }
 
             DataView()
                 .tag("data")
                 .tabItem {
-                    Text("Data")
+                    Label("Data", systemImage: "chart.line.uptrend.xyaxis")
                 }
         }
-        .tint(Color("Cream"))
+    }
+}
+
+extension View {
+    @ViewBuilder
+    func cardGlass(cornerRadius: CGFloat = 16) -> some View {
+        if #available(iOS 26, *) {
+            self.glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+        } else {
+            self.background(
+                Color(.secondarySystemGroupedBackground),
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
+        }
     }
 }

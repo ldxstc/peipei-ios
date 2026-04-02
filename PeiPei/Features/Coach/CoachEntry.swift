@@ -53,31 +53,10 @@ struct CoachEntry: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Headline FIRST — primary content
-            if !headline.isEmpty {
-                let displayHeadline = bodyText.isEmpty && isLong && !isExpanded
-                    ? String(headline.prefix(80)) + "…"
-                    : headline
-                Text(displayHeadline)
-                    .font(entryFont(size: 16.5, weight: .semibold))
-                    .foregroundStyle(Color("Cream"))
-                    .lineSpacing(3)
-                // Tap to expand for single-block long messages
-                if bodyText.isEmpty && isLong && !isExpanded {
-                    LinearGradient(
-                        colors: [Color("Surface").opacity(0), Color("Surface")],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: 40)
-                }
-            }
-
-            // Metric chips — supporting data, BELOW headline
+        VStack(alignment: .leading, spacing: 8) {
             if !metrics.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 8) {
                         ForEach(metrics) { metric in
                             MetricChip(metric: metric)
                         }
@@ -91,23 +70,38 @@ struct CoachEntry: View {
                             .frame(width: 28)
                     }
                 )
-                .padding(.top, 10)
-                .padding(.bottom, 4)
             }
 
-            // Body — remaining lines, regular, secondary
+            if !headline.isEmpty {
+                let displayHeadline = bodyText.isEmpty && isLong && !isExpanded
+                    ? String(headline.prefix(80)) + "…"
+                    : headline
+                Text(displayHeadline)
+                    .font(headlineFont)
+                    .foregroundStyle(.primary)
+                    .lineSpacing(2)
+
+                if bodyText.isEmpty && isLong && !isExpanded {
+                    LinearGradient(
+                        colors: [.clear, Color(.secondarySystemGroupedBackground)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 40)
+                }
+            }
+
             if !bodyText.isEmpty {
                 ZStack(alignment: .bottomTrailing) {
                     let displayText = isLong && !isExpanded ? String(bodyText.prefix(80)) : bodyText
                     Text(displayText)
-                        .font(entryFont(size: 14, weight: .regular))
+                        .font(bodyFont)
                         .foregroundStyle(.secondary)
-                        .lineSpacing(7)
+                        .lineSpacing(5)
 
                     if isLong && !isExpanded {
-                        // Gradient fade at bottom
                         LinearGradient(
-                            colors: [Color("Surface").opacity(0), Color("Surface")],
+                            colors: [.clear, Color(.secondarySystemGroupedBackground)],
                             startPoint: .top,
                             endPoint: .bottom
                         )
@@ -123,24 +117,17 @@ struct CoachEntry: View {
                 }
             }
 
-            // Timestamp — only visible when expanded or short messages
             if !isLong || isExpanded {
                 Text(message.createdAt.formatted(date: .omitted, time: .shortened))
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
-                    .padding(.top, 14)
+                    .foregroundStyle(Color(.tertiaryLabel))
+                    .padding(.top, 4)
             }
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 16)
-        .padding(.bottom, 14)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color("Surface"), in: .rect(cornerRadius: 16, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.04), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.06), radius: 8, y: 3)
+        .cardGlass()
         .opacity(isStreaming ? 0.8 : 1)
         .onTapGesture {
             guard isLong else { return }
@@ -156,9 +143,11 @@ struct CoachEntry: View {
         }
     }
 
-    private func entryFont(size: CGFloat, weight: Font.Weight) -> Font {
-        usesSystemFont
-            ? .system(size: size, weight: weight, design: .default)
-            : .system(size: size, weight: weight, design: .serif)
+    private var headlineFont: Font {
+        .headline
+    }
+
+    private var bodyFont: Font {
+        usesSystemFont ? .subheadline : .system(.subheadline, design: .serif)
     }
 }

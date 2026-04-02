@@ -3,23 +3,21 @@ import SwiftUI
 struct CoachJournalView: View {
     @Environment(AppModel.self) private var appModel
     @State private var viewModel = CoachViewModel()
-    @State private var path = NavigationPath()
     @State private var isKeyboardVisible = false
 
     var body: some View {
         @Bindable var viewModel = viewModel
 
-        NavigationStack(path: $path) {
+        NavigationStack {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 16) {
-                        GreetingHeader(userName: appModel.currentUser?.name ?? "")
-                            .padding(.top, 16)
-                            .padding(.horizontal, 4)
+                    LazyVStack(alignment: .leading, spacing: 20) {
+                        greetingHeader
+                            .padding(.top, 8)
 
                         if let errorMessage = viewModel.errorMessage, viewModel.messages.isEmpty {
                             ContentUnavailableView("Unable to Load Coach", systemImage: "exclamationmark.triangle", description: Text(errorMessage))
-                                .tint(Color("Cream"))
+                                .tint(Color("Garnet"))
                         }
 
                         ForEach(viewModel.daySections) { section in
@@ -43,24 +41,18 @@ struct CoachJournalView: View {
                             .id("bottom")
                     }
                     .padding(.horizontal, 16)
-                    .padding(.bottom, 18)
+                    .padding(.bottom, 16)
                 }
-                .background(Color("Background"))
-                .navigationTitle("PeiPei")
-                .navigationBarTitleDisplayMode(.inline)
+                .background(Color(.systemBackground))
+                .navigationTitle("Coach")
+                .navigationBarTitleDisplayMode(.large)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            path.append("settings")
+                        NavigationLink {
+                            SettingsView()
                         } label: {
                             Image(systemName: "gearshape")
-                                .foregroundStyle(Color("Cream"))
                         }
-                    }
-                }
-                .navigationDestination(for: String.self) { value in
-                    if value == "settings" {
-                        SettingsView()
                     }
                 }
                 .safeAreaInset(edge: .bottom) {
@@ -78,7 +70,7 @@ struct CoachJournalView: View {
                     )
                     .padding(.horizontal, 14)
                     .padding(.top, 10)
-                    .background(Color("Background").opacity(0.95))
+                    .background(Color(.systemBackground).opacity(0.95))
                     .sensoryFeedback(.impact, trigger: viewModel.messages.count)
                 }
                 .task {
@@ -112,6 +104,30 @@ struct CoachJournalView: View {
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .center)
             .padding(.vertical, 8)
+    }
+
+    private var greetingHeader: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(greetingLine)
+                .font(.title2)
+                .foregroundStyle(.primary)
+
+            Text("Your coach is listening.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var greetingLine: String {
+        let hour = Calendar.current.component(.hour, from: .now)
+        let name = (appModel.currentUser?.name).flatMap { $0.isEmpty ? nil : $0 } ?? "runner"
+        switch hour {
+        case 5..<12:  return "Good morning, \(name)."
+        case 12..<17: return "Good afternoon, \(name)."
+        case 17..<22: return "Good evening, \(name)."
+        default:      return "Good night, \(name)."
+        }
     }
 
     private func loadIfPossible(force: Bool = false) async {

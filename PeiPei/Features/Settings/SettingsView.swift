@@ -41,7 +41,7 @@ struct SettingsView: View {
                     Text("Status")
                     Spacer()
                     Text(viewModel.garminConnected ? "Connected" : "Not Connected")
-                        .foregroundStyle(viewModel.garminConnected ? Color("Amber") : Color("TextSecondary"))
+                        .foregroundStyle(viewModel.garminConnected ? .green : .secondary)
                 }
 
                 if !viewModel.garminEmail.isEmpty {
@@ -76,8 +76,6 @@ struct SettingsView: View {
                 }
             }
         }
-        .scrollContentBackground(.hidden)
-        .background(Color("Background"))
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
         .task {

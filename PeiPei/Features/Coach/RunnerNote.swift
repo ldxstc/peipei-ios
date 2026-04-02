@@ -6,13 +6,12 @@ struct RunnerNote: View {
     var body: some View {
         HStack {
             Spacer(minLength: 60)
-
             Text(message.content)
                 .font(.subheadline)
-                .foregroundStyle(Color("Cream"))
+                .foregroundStyle(.primary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(Color("Garnet").opacity(0.35), in: .rect(cornerRadius: 18, style: .continuous))
+                .background(Color(.systemIndigo).opacity(0.2), in: .rect(cornerRadius: 18, style: .continuous))
         }
     }
 }
