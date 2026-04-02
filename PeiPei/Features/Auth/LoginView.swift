@@ -1,120 +1,115 @@
-import SwiftUI
 import AuthenticationServices
+import CryptoKit
+import SwiftUI
+import UIKit
 
 struct LoginView: View {
-    @Environment(AppModel.self) private var appModel
-    @State private var viewModel = AuthViewModel()
-    @FocusState private var focusedField: Field?
-
-    private enum Field {
-        case email
-        case password
-    }
+    @Environment(AppModel.self) private var app
+    @State private var email = ""
+    @State private var password = ""
+    @State private var nonce: String?
 
     var body: some View {
-        @Bindable var viewModel = viewModel
-
         ZStack {
-            Color("Background").ignoresSafeArea()
+            DesignTokens.background.ignoresSafeArea()
 
-            VStack(spacing: 28) {
-                VStack(spacing: 10) {
-                    ZStack {
-                        Circle()
-                            .fill(Color("Garnet").opacity(0.22))
-                            .frame(width: 92, height: 92)
+            VStack(alignment: .leading, spacing: 28) {
+                Spacer()
 
-                        Image(systemName: "figure.run.circle.fill")
-                            .font(.system(size: 44, weight: .medium))
-                            .foregroundStyle(Color("Cream"))
-                    }
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("PeiPei")
+                        .font(.system(size: 38, weight: .light))
+                        .foregroundStyle(DesignTokens.textPrimary)
 
-                    Text("pei·pei")
-                        .font(.system(size: 34, weight: .semibold, design: .serif))
-                        .foregroundStyle(Color("Cream"))
-                        .tracking(1.2)
-
-                    Text("Your running coach, tuned to the work.")
-                        .font(.subheadline)
-                        .foregroundStyle(Color("TextSecondary"))
+                    Text("The coach already looked at everything.")
+                        .font(.system(.body, design: .serif))
+                        .foregroundStyle(DesignTokens.textSecondary)
                 }
 
                 VStack(spacing: 14) {
-                    TextField("Email", text: $viewModel.email)
-                        .textContentType(.username)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.emailAddress)
-                        .focused($focusedField, equals: .email)
-                        .submitLabel(.next)
-                        .onSubmit { focusedField = .password }
-                        .peipeiFieldStyle()
+                    textField("Email", text: $email, contentType: .emailAddress)
+                    secureField("Password", text: $password)
 
-                    SecureField("Password", text: $viewModel.password)
-                        .textContentType(.password)
-                        .focused($focusedField, equals: .password)
-                        .submitLabel(.go)
-                        .onSubmit {
-                            Task { await viewModel.signIn(appModel: appModel) }
+                    Button {
+                        Task {
+                            await app.signIn(email: email, password: password)
                         }
-                        .peipeiFieldStyle()
-
-                    if let errorMessage = viewModel.errorMessage {
-                        Text(errorMessage)
-                            .font(.footnote)
-                            .foregroundStyle(.red.opacity(0.9))
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } label: {
+                        HStack {
+                            Text("Enter")
+                            Spacer()
+                            Image(systemName: "arrow.up.right")
+                        }
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 16)
+                        .background(DesignTokens.garnet)
                     }
-                }
 
-                Button {
-                    Task { await viewModel.signIn(appModel: appModel) }
-                } label: {
-                    if viewModel.isLoading {
-                        ProgressView()
-                            .tint(.white)
-                            .frame(maxWidth: .infinity)
-                    } else {
-                        Text("Sign In")
-                            .frame(maxWidth: .infinity)
+                    SignInWithAppleButton(.signIn) { request in
+                        let nonce = randomNonce()
+                        self.nonce = nonce
+                        request.requestedScopes = [.fullName, .email]
+                        request.nonce = sha256(nonce)
+                    } onCompletion: { result in
+                        switch result {
+                        case .success(let authResults):
+                            guard let credential = authResults.credential as? ASAuthorizationAppleIDCredential else { return }
+                            Task {
+                                await app.signInWithApple(credential: credential, nonce: nonce)
+                            }
+                        case .failure(let error):
+                            app.errorMessage = error.localizedDescription
+                        }
                     }
+                    .signInWithAppleButtonStyle(.white)
+                    .frame(height: 52)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(Color("Garnet"))
-                .controlSize(.large)
-                .disabled(viewModel.isLoading)
 
-                SignInWithAppleButton(.signIn) { request in
-                    request.requestedScopes = [.fullName, .email]
-                } onCompletion: { result in
-                    viewModel.handleAppleSignIn(result: result)
-                }
-                .signInWithAppleButtonStyle(.white)
-                .frame(height: 52)
-                .clipShape(RoundedRectangle(cornerRadius: 14))
-
-                Spacer(minLength: 0)
+                Spacer()
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 32)
-            .frame(maxWidth: 460)
         }
     }
-}
 
-private struct PeiPeiFieldStyle: ViewModifier {
-    func body(content: Content) -> some View {
-        content
+    private func textField(_ title: String, text: Binding<String>, contentType: UITextContentType) -> some View {
+        TextField(title, text: text)
+            .textContentType(contentType)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
             .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-            .background(Color("Surface"))
-            .foregroundStyle(Color("Cream"))
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .padding(.vertical, 16)
+            .background(Color.white.opacity(0.04))
+            .foregroundStyle(DesignTokens.textPrimary)
+            .overlay {
+                RoundedRectangle(cornerRadius: 0)
+                    .stroke(DesignTokens.separator, lineWidth: 1)
+            }
     }
-}
 
-private extension View {
-    func peipeiFieldStyle() -> some View {
-        modifier(PeiPeiFieldStyle())
+    private func secureField(_ title: String, text: Binding<String>) -> some View {
+        SecureField(title, text: text)
+            .textContentType(.password)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 16)
+            .background(Color.white.opacity(0.04))
+            .foregroundStyle(DesignTokens.textPrimary)
+            .overlay {
+                RoundedRectangle(cornerRadius: 0)
+                    .stroke(DesignTokens.separator, lineWidth: 1)
+            }
+    }
+
+    private func randomNonce(length: Int = 32) -> String {
+        let charset = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
+        return String((0..<length).compactMap { _ in charset.randomElement() })
+    }
+
+    private func sha256(_ value: String) -> String {
+        let data = Data(value.utf8)
+        let digest = SHA256.hash(data: data)
+        return digest.map { String(format: "%02x", $0) }.joined()
     }
 }

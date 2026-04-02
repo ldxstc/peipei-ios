@@ -1,19 +1,16 @@
 import Foundation
+import SwiftUI
 
-struct User: Codable, Sendable, Equatable {
+struct User: Codable, Hashable, Sendable {
     let id: String
+    let name: String?
     let email: String
-    let name: String
 }
 
 struct LoginResponse: Codable, Sendable {
+    let token: String
     let user: User
-    let token: String       // API returns "token" field
     let redirect: Bool?
-
-    enum CodingKeys: String, CodingKey {
-        case user, token, redirect
-    }
 }
 
 struct CoachChatResponse: Codable, Sendable {
@@ -22,308 +19,307 @@ struct CoachChatResponse: Codable, Sendable {
 }
 
 struct CoachMessage: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let role: Role
+    var content: String
+    let createdAt: Date
+    let messageType: String?
+    let attachments: [String]?
+
     enum Role: String, Codable, Sendable {
         case user
         case assistant
     }
 
-    enum MessageType: String, Codable, Sendable {
-        case text
-        case socialPost = "social_post"
-    }
-
-    let id: String
-    let role: Role
-    var content: String
-    let createdAt: Date
-    let messageType: MessageType
-    let socialPost: SocialPost?
-    let attachments: [String]?  // present in API, ignored for now
-
-
     enum CodingKeys: String, CodingKey {
-        case id, role, content, createdAt, messageType, socialPost, attachments
-    }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        id = try c.decode(String.self, forKey: .id)
-        role = try c.decode(Role.self, forKey: .role)
-        content = try c.decode(String.self, forKey: .content)
-        createdAt = try c.decode(Date.self, forKey: .createdAt)
-        messageType = try c.decodeIfPresent(MessageType.self, forKey: .messageType) ?? .text
-        socialPost = try c.decodeIfPresent(SocialPost.self, forKey: .socialPost)
-        attachments = try c.decodeIfPresent([String].self, forKey: .attachments)
+        case id
+        case role
+        case content
+        case createdAt
+        case messageType
+        case attachments
+        case type
     }
 
     init(
-        id: String = UUID().uuidString,
+        id: String,
         role: Role,
         content: String,
-        createdAt: Date = .now,
-        messageType: MessageType = .text,
-        socialPost: SocialPost? = nil
+        createdAt: Date,
+        messageType: String? = nil,
+        attachments: [String]? = nil
     ) {
         self.id = id
         self.role = role
         self.content = content
         self.createdAt = createdAt
         self.messageType = messageType
-        self.socialPost = socialPost
-        self.attachments = nil
+        self.attachments = attachments
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let id = try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
+        let role = try container.decodeIfPresent(Role.self, forKey: .role) ?? .assistant
+        let messageType = try container.decodeIfPresent(String.self, forKey: .messageType)
+            ?? container.decodeIfPresent(String.self, forKey: .type)
+
+        let content: String
+        if let stringContent = try? container.decode(String.self, forKey: .content) {
+            content = stringContent
+        } else if let contentArray = try? container.decode([TextChunk].self, forKey: .content) {
+            content = contentArray.map(\.text).joined()
+        } else if let nested = try? container.decode(MessageContent.self, forKey: .content) {
+            content = nested.caption ?? nested.text ?? nested.content ?? nested.message ?? ""
+        } else {
+            content = ""
+        }
+
+        let decodedDate: Date
+        if let iso8601String = try container.decodeIfPresent(String.self, forKey: .createdAt),
+           let date = APIDateCoding.parse(iso8601String) {
+            decodedDate = date
+        } else {
+            decodedDate = .now
+        }
+
+        self.id = id
+        self.role = role
+        self.content = MarkupCleaner.clean(content)
+        self.createdAt = decodedDate
+        self.messageType = messageType
+        self.attachments = try container.decodeIfPresent([String].self, forKey: .attachments)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(role, forKey: .role)
+        try container.encode(content, forKey: .content)
+        try container.encode(APIDateCoding.string(from: createdAt), forKey: .createdAt)
+        try container.encodeIfPresent(messageType, forKey: .messageType)
+        try container.encodeIfPresent(attachments, forKey: .attachments)
     }
 }
 
-struct SocialPost: Codable, Hashable, Sendable {
-    let caption: String
-    let imageURL: URL?
+private struct TextChunk: Codable {
+    let text: String
+}
 
-    enum CodingKeys: String, CodingKey {
-        case caption
-        case imageURL = "imageUrl"
-    }
+private struct MessageContent: Codable {
+    let caption: String?
+    let text: String?
+    let content: String?
+    let message: String?
 }
 
 struct SidebarData: Codable, Sendable {
-    let thisWeek: ThisWeekStats
+    let goalProgress: GoalProgress
     let recentRuns: [RecentRun]
-    let goalProgress: GoalProgress?
-
-    let body: BodyStats?
-
-    var todayPlan: TodayPlan { TodayPlan(title: "Check with coach", distance: "--") }
+    let thisWeek: WeekSummary
+    let todayPlan: TodayPlan
+    let raw: JSONValue?
 }
 
-struct ThisWeekStats: Codable, Sendable {
-    let totalKm: Double?
-    let runCount: Int?
-    let avgPaceSeconds: Int?
-    let trendGlyph: String?
-    let weeklyVolumes: [WeeklyVolume]?
-
-    var km: String {
-        guard let v = totalKm else { return "--" }
-        return v < 10 ? String(format: "%.1f", v) : String(format: "%.0f", v)
-    }
-    var runs: String { runCount.map(String.init) ?? "--" }
-    var avgPace: String {
-        guard let s = avgPaceSeconds, s > 0 else { return "--" }
-        return "\(s / 60):\(String(format: "%02d", s % 60))/km"
-    }
-}
-
-struct WeeklyVolume: Codable, Sendable, Identifiable {
-    let weekStart: String
-    let distanceKm: Double
-    let sessions: Int
-    var id: String { weekStart }
-}
-
-struct TodayPlan: Sendable {
+struct GoalProgress: Codable, Hashable, Sendable {
+    let countdown: String
+    let detail: String
     let title: String
-    let distance: String
-}
-
-struct GoalProgress: Codable, Sendable {
-    let raceName: String?
-    let daysToRace: Int?
-    let currentWeek: Int?
-    let totalWeeks: Int?
-    let fitnessLabel: String?
-    let fitnessValue: Double?
-    let progressPercent: Double?
-
-    var blockLabel: String {
-        guard let w = currentWeek, let t = totalWeeks else { return "--" }
-        return "Week \(w) / \(t)"
-    }
-
-    var title: String { raceName ?? "No race set" }
-    var countdown: String {
-        guard let d = daysToRace else { return "" }
-        return "\(d) days"
-    }
-    var detail: String {
-        var parts: [String] = []
-        if let w = currentWeek, let t = totalWeeks { parts.append("Week \(w) of \(t)") }
-        if let f = fitnessLabel { parts.append(f) }
-        return parts.joined(separator: " · ")
-    }
 }
 
 struct RecentRun: Codable, Identifiable, Hashable, Sendable {
     let id: String
-    let activityDate: String?
-    let workoutType: String?
-    let distanceKm: Double?
-    let pacePerKmSeconds: Int?
-    let avgHr: Int?
-
-    var title: String { workoutType?.replacingOccurrences(of: "_", with: " ").capitalized ?? "Run" }
-    var subtitle: String {
-        guard let d = distanceKm else { return "--" }
-        return d < 10 ? String(format: "%.1f km", d) : String(format: "%.0f km", d)
-    }
-    var detail: String {
-        guard let s = pacePerKmSeconds, s > 0 else { return "--" }
-        return "\(s / 60):\(String(format: "%02d", s % 60))/km"
-    }
-    var date: String? { activityDate }
-    var shortDate: String {
-        guard let d = activityDate else { return "--" }
-        let parts = d.split(separator: "-")
-        guard parts.count == 3 else { return d }
-        return "\(parts[1])/\(parts[2])"
-    }
-    var hrLabel: String? {
-        guard let hr = avgHr else { return nil }
-        return "\(hr) bpm"
-    }
+    let title: String
+    let subtitle: String
+    let detail: String
 }
 
-struct BodyStats: Codable, Sendable {
-    let latestWeightKg: Double?
-    let latestWeightDate: String?
-    let restingHr: Double?
-    let restingHrDelta: Int?
-    let restingHrGlyph: String?
+struct WeekSummary: Codable, Hashable, Sendable {
+    let km: String
+    let runs: String
+    let avgPace: String
 }
 
-struct SettingsPanelResponse: Codable, Sendable {
+struct TodayPlan: Codable, Hashable, Sendable {
+    let title: String
+    let distance: String
+}
+
+struct SettingsPanelData: Codable, Sendable {
     let displayName: String
-    let units: Units
-    let coachLanguage: CoachLanguage
+    let units: UnitsPreference
+    let coachLanguage: CoachLanguagePreference
     let customInstructions: String
     let accountEmail: String
-    let garmin: GarminSettings
-    let billing: BillingSettings
+    let billing: BillingData
+    let garmin: GarminData
+    let raw: JSONValue?
 }
 
-enum Units: String, Codable, CaseIterable, Identifiable, Sendable {
+struct BillingData: Codable, Hashable, Sendable {
+    let isPro: Bool
+    let tierLabel: String
+}
+
+struct GarminData: Codable, Hashable, Sendable {
+    let connected: Bool
+    let email: String
+}
+
+enum UnitsPreference: String, Codable, CaseIterable, Identifiable, Sendable {
     case metric
     case imperial
 
     var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .metric: "Metric"
-        case .imperial: "Imperial"
-        }
-    }
 }
 
-enum CoachLanguage: String, Codable, CaseIterable, Identifiable, Sendable {
-    case english = "en"
-    case simplifiedChinese = "zh-Hans"
+enum CoachLanguagePreference: String, Codable, CaseIterable, Identifiable, Sendable {
+    case en
+    case zhHans = "zh-Hans"
 
     var id: String { rawValue }
 
-    var title: String {
+    var label: String {
         switch self {
-        case .english: "English"
-        case .simplifiedChinese: "简体中文"
+        case .en: "English"
+        case .zhHans: "Simplified Chinese"
         }
     }
 }
 
-struct GarminSettings: Codable, Sendable {
-    let connected: Bool
-    let email: String?
-}
-
-struct BillingSettings: Codable, Sendable {
-    let isPro: Bool
-}
-
-struct SettingsUpdateRequest: Codable, Sendable {
+struct SettingsSaveInput: Codable, Sendable {
     let displayName: String
-    let units: Units
-    let coachLanguage: CoachLanguage
+    let units: UnitsPreference
+    let coachLanguage: CoachLanguagePreference
     let customInstructions: String
 }
 
-struct MetricValue: Identifiable, Hashable, Sendable {
-    let id = UUID()
-    let label: String
-    let number: String
-    let unit: String
-    var value: String { number + (unit.isEmpty ? "" : " " + unit) }
+struct DirectiveContent: Hashable, Sendable {
+    let instruction: String
+    let reasoning: String?
+    let raceCountdown: String?
 }
 
-struct DaySection: Identifiable, Hashable {
+struct DaySection: Identifiable, Hashable, Sendable {
     let id: String
-    let date: Date
+    let dateLabel: String
     let messages: [CoachMessage]
 }
 
-struct SentMessagePayload: Encodable, Sendable {
-    let id: String
-    let role: String
-    let content: String
-    let createdAt: String
-    let messageType: String
+struct RunDetail: Identifiable, Hashable, Sendable {
+    let id = UUID()
+    let title: String
+    let subtitle: String
+    let distance: String
+    let avgPace: String
+    let duration: String
+    let avgHeartRate: String
+    let cadence: String
+    let coachTake: String
+    let splits: [RunSplit]
+}
 
-    init(message: CoachMessage) {
-        id = message.id
-        role = message.role.rawValue
-        content = message.content
-        createdAt = DateCoding.string(from: message.createdAt)
-        messageType = message.messageType.rawValue
+struct RunSplit: Identifiable, Hashable, Sendable {
+    let id: Int
+    let kilometer: Int
+    let pace: String
+    let heartRate: String
+    let intensity: Double
+}
+
+enum WorkoutType: String, Hashable, Sendable {
+    case easy
+    case tempo
+    case long
+    case interval
+    case recovery
+    case race
+    case rest
+
+    var label: String {
+        switch self {
+        case .easy: "EASY"
+        case .tempo: "TEMPO"
+        case .long: "LONG RUN"
+        case .interval: "INTERVAL"
+        case .recovery: "RECOVERY"
+        case .race: "RACE PACE"
+        case .rest: "REST"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .easy: DesignTokens.effortEasy
+        case .tempo: DesignTokens.effortTempo
+        case .long: DesignTokens.effortLong
+        case .interval: DesignTokens.effortInterval
+        case .recovery, .rest: DesignTokens.effortRecovery
+        case .race: DesignTokens.effortRace
+        }
     }
 }
 
-struct ChatStreamRequest: Encodable, Sendable {
-    let messages: [SentMessagePayload]
-    let contextType: String
+enum JSONValue: Codable, Hashable, Sendable {
+    case string(String)
+    case number(Double)
+    case bool(Bool)
+    case object([String: JSONValue])
+    case array([JSONValue])
+    case null
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+
+        if container.decodeNil() {
+            self = .null
+        } else if let value = try? container.decode(Bool.self) {
+            self = .bool(value)
+        } else if let value = try? container.decode(Double.self) {
+            self = .number(value)
+        } else if let value = try? container.decode(String.self) {
+            self = .string(value)
+        } else if let value = try? container.decode([String: JSONValue].self) {
+            self = .object(value)
+        } else if let value = try? container.decode([JSONValue].self) {
+            self = .array(value)
+        } else {
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Unsupported JSON value")
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+
+        switch self {
+        case .string(let value):
+            try container.encode(value)
+        case .number(let value):
+            try container.encode(value)
+        case .bool(let value):
+            try container.encode(value)
+        case .object(let value):
+            try container.encode(value)
+        case .array(let value):
+            try container.encode(value)
+        case .null:
+            try container.encodeNil()
+        }
+    }
 }
 
-enum DateCoding {
-    static func string(from date: Date) -> String {
+enum APIDateCoding {
+    nonisolated(unsafe) private static let formatter: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return formatter.string(from: date)
-    }
-
-    static func parse(_ value: String) -> Date? {
-        let formatterWithFractions = ISO8601DateFormatter()
-        formatterWithFractions.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        if let date = formatterWithFractions.date(from: value) {
-            return date
-        }
-
-        let formatter = ISO8601DateFormatter()
-        return formatter.date(from: value)
-    }
-}
-
-extension JSONDecoder {
-    static let peipei: JSONDecoder = {
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .custom { container in
-            let value = try container.singleValueContainer().decode(String.self)
-            if let date = DateCoding.parse(value) {
-                return date
-            }
-            throw DecodingError.dataCorruptedError(
-                in: try container.singleValueContainer(),
-                debugDescription: "Invalid ISO8601 date: \(value)"
-            )
-        }
-        return decoder
+        return formatter
     }()
-}
 
-extension UserDefaults {
-    static let userKey = "PeiPei.CurrentUser"
-
-    func saveUser(_ user: User) {
-        guard let data = try? JSONEncoder().encode(user) else { return }
-        set(data, forKey: Self.userKey)
+    static func parse(_ string: String) -> Date? {
+        formatter.date(from: string) ?? ISO8601DateFormatter().date(from: string)
     }
 
-    func loadUser() -> User? {
-        guard let data = data(forKey: Self.userKey) else { return nil }
-        return try? JSONDecoder().decode(User.self, from: data)
+    static func string(from date: Date) -> String {
+        formatter.string(from: date)
     }
 }

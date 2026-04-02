@@ -1,62 +1,4 @@
 import SwiftUI
-import Observation
-
-@MainActor
-@Observable
-final class AppModel {
-    var sessionToken: String?
-    var currentUser: User?
-
-    init() {
-        restoreSession()
-    }
-
-    var isAuthenticated: Bool {
-        sessionToken?.isEmpty == false
-    }
-
-    func restoreSession() {
-        sessionToken = KeychainHelper.loadString(forKey: KeychainKey.sessionToken)
-        injectDebugSessionIfNeeded()
-        currentUser = UserDefaults.standard.loadUser()
-    }
-
-    func finishLogin(response: LoginResponse) {
-        KeychainHelper.save(response.token, forKey: KeychainKey.sessionToken)
-        if !response.user.email.isEmpty {
-            KeychainHelper.save(response.user.email, forKey: KeychainKey.userEmail)
-        }
-        if !response.user.name.isEmpty {
-            KeychainHelper.save(response.user.name, forKey: KeychainKey.userName)
-        }
-        UserDefaults.standard.saveUser(response.user)
-        sessionToken = response.token
-        currentUser = response.user
-    }
-
-    func signOut() {
-        KeychainHelper.deleteValue(forKey: KeychainKey.sessionToken)
-        KeychainHelper.deleteValue(forKey: KeychainKey.userEmail)
-        KeychainHelper.deleteValue(forKey: KeychainKey.userName)
-        UserDefaults.standard.removeObject(forKey: UserDefaults.userKey)
-        sessionToken = nil
-        currentUser = nil
-    }
-
-    // DEBUG: pre-inject session token for simulator testing
-    private func injectDebugSessionIfNeeded() {
-        #if DEBUG
-        if let debugToken = UserDefaults.standard.string(forKey: "DEBUGSessionToken"),
-           !debugToken.isEmpty {
-            KeychainHelper.save(debugToken, forKey: KeychainKey.sessionToken)
-            sessionToken = debugToken
-            KeychainHelper.save("Runner", forKey: KeychainKey.userName)
-            KeychainHelper.save("runner@peipei.app", forKey: KeychainKey.userEmail)
-        }
-        #endif
-    }
-
-}
 
 @main
 struct PeiPeiApp: App {
@@ -64,49 +6,46 @@ struct PeiPeiApp: App {
 
     var body: some Scene {
         WindowGroup {
-            Group {
-                if appModel.isAuthenticated {
-                    RootTabView()
-                } else {
-                    LoginView()
-                }
-            }
-            .environment(appModel)
-            .preferredColorScheme(.dark)
+            RootView()
+                .environment(appModel)
+                .preferredColorScheme(.dark)
         }
     }
 }
 
-private struct RootTabView: View {
-    @State var selectedTab = "coach"
-    
+private struct RootView: View {
+    @Environment(AppModel.self) private var app
+
     var body: some View {
-        TabView(selection: $selectedTab) {
-            CoachJournalView()
-                .tag("coach")
-                .tabItem {
-                    Label("Coach", systemImage: "bubble.left.and.bubble.right")
+        Group {
+            switch app.startupState {
+            case .launching:
+                ZStack {
+                    DesignTokens.background.ignoresSafeArea()
+                    ProgressView()
+                        .tint(DesignTokens.textPrimary)
                 }
-
-            DataView()
-                .tag("data")
-                .tabItem {
-                    Label("Data", systemImage: "chart.line.uptrend.xyaxis")
-                }
+            case .loggedOut:
+                LoginView()
+            case .loggedIn:
+                SignalView()
+            }
         }
-    }
-}
-
-extension View {
-    @ViewBuilder
-    func cardGlass(cornerRadius: CGFloat = 16) -> some View {
-        if #available(iOS 26, *) {
-            self.glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
-        } else {
-            self.background(
-                Color(.secondarySystemGroupedBackground),
-                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        .task {
+            await app.bootstrap()
+        }
+        .alert(
+            "Error",
+            isPresented: Binding(
+                get: { app.errorMessage != nil },
+                set: { if !$0 { app.errorMessage = nil } }
             )
+        ) {
+            Button("OK", role: .cancel) {
+                app.errorMessage = nil
+            }
+        } message: {
+            Text(app.errorMessage ?? "")
         }
     }
 }

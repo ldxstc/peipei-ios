@@ -1,106 +1,83 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @Environment(AppModel.self) private var appModel
+    @Environment(AppModel.self) private var app
     @Environment(\.dismiss) private var dismiss
-    @State private var viewModel = SettingsViewModel()
+    @State private var displayName = ""
+    @State private var units: UnitsPreference = .metric
+    @State private var coachLanguage: CoachLanguagePreference = .en
+    @State private var customInstructions = ""
 
     var body: some View {
-        @Bindable var viewModel = viewModel
-
         Form {
-            if let errorMessage = viewModel.errorMessage {
-                Section {
-                    Text(errorMessage)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                }
-            }
-
             Section("Profile") {
-                TextField("Display Name", text: $viewModel.displayName)
-                    .onChange(of: viewModel.displayName) { _, _ in autosave() }
-
-                Picker("Units", selection: $viewModel.units) {
-                    ForEach(Units.allCases) { unit in
-                        Text(unit.title).tag(unit)
+                TextField("Display name", text: $displayName)
+                Picker("Units", selection: $units) {
+                    Text("Metric").tag(UnitsPreference.metric)
+                    Text("Imperial").tag(UnitsPreference.imperial)
+                }
+                Picker("Coach language", selection: $coachLanguage) {
+                    ForEach(CoachLanguagePreference.allCases) { language in
+                        Text(language.label).tag(language)
                     }
-                }
-                .onChange(of: viewModel.units) { _, _ in autosave() }
-
-                Picker("Language", selection: $viewModel.coachLanguage) {
-                    ForEach(CoachLanguage.allCases) { language in
-                        Text(language.title).tag(language)
-                    }
-                }
-                .onChange(of: viewModel.coachLanguage) { _, _ in autosave() }
-            }
-
-            Section("Garmin") {
-                HStack {
-                    Text("Status")
-                    Spacer()
-                    Text(viewModel.garminConnected ? "Connected" : "Not Connected")
-                        .foregroundStyle(viewModel.garminConnected ? .green : .secondary)
-                }
-
-                if !viewModel.garminEmail.isEmpty {
-                    LabeledContent("Email", value: viewModel.garminEmail)
-                }
-
-                Button("Sync Now") {
-                    guard let token = appModel.sessionToken else { return }
-                    Task { await viewModel.syncGarmin(token: token) }
-                }
-
-                Button("Disconnect", role: .destructive) {
-                    viewModel.disconnectGarmin()
                 }
             }
 
             Section("Coach") {
-                NavigationLink("Instructions") {
-                    InstructionsEditorView(text: $viewModel.customInstructions) {
-                        autosave()
-                    }
+                TextField("Instructions", text: $customInstructions, axis: .vertical)
+                    .lineLimit(4...10)
+            }
+
+            Section("Garmin") {
+                LabeledContent("Status", value: app.settingsPanel?.garmin.connected == true ? "Connected" : "Disconnected")
+                if let email = app.settingsPanel?.garmin.email, !email.isEmpty {
+                    LabeledContent("Email", value: email)
                 }
             }
 
             Section("Account") {
-                LabeledContent("Email", value: viewModel.accountEmail)
-                LabeledContent("Plan", value: viewModel.isPro ? "Pro" : "Free")
+                LabeledContent("Email", value: app.settingsPanel?.accountEmail ?? app.currentUser?.email ?? "--")
+                LabeledContent("Tier", value: app.settingsPanel?.billing.tierLabel ?? "Free")
+            }
+
+            Section {
+                Button("Save") {
+                    Task {
+                        await app.saveSettings(
+                            SettingsSaveInput(
+                                displayName: displayName,
+                                units: units,
+                                coachLanguage: coachLanguage,
+                                customInstructions: customInstructions
+                            )
+                        )
+                        dismiss()
+                    }
+                }
+                .foregroundStyle(DesignTokens.garnet)
 
                 Button("Sign Out", role: .destructive) {
-                    appModel.signOut()
+                    app.signOut()
                     dismiss()
                 }
             }
         }
-        .navigationTitle("Settings")
-        .navigationBarTitleDisplayMode(.inline)
+        .scrollContentBackground(.hidden)
+        .background(DesignTokens.background)
+        .preferredColorScheme(.dark)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button("Close") {
+                    dismiss()
+                }
+                .foregroundStyle(DesignTokens.textSecondary)
+            }
+        }
         .task {
-            guard let token = appModel.sessionToken else { return }
-            await viewModel.load(token: token)
+            displayName = app.settingsPanel?.displayName ?? app.currentUser?.name ?? ""
+            units = app.settingsPanel?.units ?? .metric
+            coachLanguage = app.settingsPanel?.coachLanguage ?? .en
+            customInstructions = app.settingsPanel?.customInstructions ?? ""
         }
-    }
-
-    private func autosave() {
-        guard let token = appModel.sessionToken else { return }
-        viewModel.scheduleAutosave(token: token)
-    }
-}
-
-private struct InstructionsEditorView: View {
-    @Binding var text: String
-    let onChange: () -> Void
-
-    var body: some View {
-        Form {
-            TextEditor(text: $text)
-                .frame(minHeight: 240)
-                .onChange(of: text) { _, _ in onChange() }
-        }
-        .navigationTitle("Instructions")
-        .navigationBarTitleDisplayMode(.inline)
     }
 }

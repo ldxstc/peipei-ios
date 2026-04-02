@@ -1,110 +1,121 @@
 import SwiftUI
 
 struct RunDetailView: View {
-    let run: RecentRun
+    @Environment(\.dismiss) private var dismiss
+    let detail: RunDetail
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                // Hero section
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(run.title)
-                        .font(.system(.title2, design: .serif).weight(.semibold))
-                        .foregroundStyle(Color("Cream"))
+                header
 
-                    if let date = run.activityDate {
-                        Text(formatFullDate(date))
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(detail.distance)
+                        .font(.system(size: 52, weight: .light))
+                        .foregroundStyle(.white)
+                    Text("distance")
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(DesignTokens.textSecondary)
                 }
 
-                // Primary metrics
-                HStack(spacing: 0) {
-                    metricBlock(label: "Distance", value: run.subtitle, icon: "figure.run")
-                    metricBlock(label: "Pace", value: run.detail, icon: "timer")
-                    if let hr = run.avgHr {
-                        metricBlock(label: "Avg HR", value: "\(hr) bpm", icon: "heart.fill")
-                    }
-                }
-
-                // Metric detail cards
-                VStack(spacing: 12) {
-                    if let km = run.distanceKm {
-                        detailRow(label: "Distance", value: String(format: "%.2f km", km))
-                    }
-                    if let pace = run.pacePerKmSeconds, pace > 0 {
-                        let min = pace / 60
-                        let sec = pace % 60
-                        detailRow(label: "Average Pace", value: "\(min):\(String(format: "%02d", sec)) /km")
-                    }
-                    if let hr = run.avgHr {
-                        detailRow(label: "Average Heart Rate", value: "\(hr) bpm")
-                    }
-                    if let type = run.workoutType {
-                        detailRow(label: "Workout Type", value: type.replacingOccurrences(of: "_", with: " ").capitalized)
-                    }
-
-                    // Duration estimate
-                    if let km = run.distanceKm, let pace = run.pacePerKmSeconds, pace > 0 {
-                        let totalSeconds = Int(km * Double(pace))
-                        let hours = totalSeconds / 3600
-                        let mins = (totalSeconds % 3600) / 60
-                        let secs = totalSeconds % 60
-                        let duration = hours > 0
-                            ? "\(hours)h \(mins)m"
-                            : "\(mins)m \(secs)s"
-                        detailRow(label: "Est. Duration", value: duration)
-                    }
-                }
-                .padding(16)
-                .background(Color("Surface"), in: .rect(cornerRadius: 16, style: .continuous))
+                metricGrid
+                splits
+                coachTake
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 8)
-            .padding(.bottom, 40)
+            .padding(16)
         }
-        .background(Color("Background"))
-        .navigationTitle("Run Detail")
-        .navigationBarTitleDisplayMode(.inline)
+        .background(DesignTokens.background)
+        .toolbar(.hidden, for: .navigationBar)
     }
 
-    private func metricBlock(label: String, value: String, icon: String) -> some View {
-        VStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.system(size: 16))
-                .foregroundStyle(Color("Amber"))
+    private var header: some View {
+        Button {
+            dismiss()
+        } label: {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 10) {
+                    Image(systemName: "chevron.left")
+                    Text(detail.title)
+                        .font(.system(size: 22, weight: .light))
+                }
+                .foregroundStyle(DesignTokens.textPrimary)
+
+                Text(detail.subtitle.capitalized)
+                    .font(.system(size: 13))
+                    .foregroundStyle(DesignTokens.textSecondary)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var metricGrid: some View {
+        VStack(spacing: 18) {
+            Rectangle().fill(DesignTokens.separator).frame(height: 0.5)
+            HStack {
+                statBlock(detail.avgPace, "AVG PACE")
+                Spacer()
+                statBlock(detail.duration, "DURATION")
+            }
+            HStack {
+                statBlock(detail.avgHeartRate, "AVG HR")
+                Spacer()
+                statBlock(detail.cadence, "CADENCE")
+            }
+            Rectangle().fill(DesignTokens.separator).frame(height: 0.5)
+        }
+    }
+
+    private var splits: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Splits")
+                .font(.system(size: 16, weight: .regular))
+                .foregroundStyle(DesignTokens.textPrimary)
+
+            ForEach(detail.splits) { split in
+                HStack(spacing: 12) {
+                    Text("\(split.kilometer)")
+                        .font(.system(size: 14, weight: .medium, design: .monospaced))
+                        .frame(width: 20, alignment: .leading)
+                    Text(split.pace)
+                        .font(.system(size: 14, weight: .medium, design: .monospaced))
+                        .frame(width: 52, alignment: .leading)
+                    Text(split.heartRate)
+                        .font(.system(size: 14, weight: .medium, design: .monospaced))
+                        .frame(width: 70, alignment: .leading)
+
+                    GeometryReader { proxy in
+                        RoundedRectangle(cornerRadius: 0)
+                            .fill(Color.white.opacity(0.18))
+                            .frame(width: proxy.size.width * split.intensity, height: 10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(height: 10)
+                }
+            }
+        }
+    }
+
+    private var coachTake: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Coach's Take")
+                .font(.system(size: 16, weight: .regular))
+                .foregroundStyle(DesignTokens.textPrimary)
+
+            Text(detail.coachTake)
+                .font(.system(.body, design: .serif))
+                .foregroundStyle(DesignTokens.textPrimary)
+                .lineSpacing(5)
+        }
+    }
+
+    private func statBlock(_ value: String, _ label: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
             Text(value)
-                .font(.system(size: 18, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Color("Cream"))
-            Text(label.uppercased())
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.tertiary)
-                .tracking(0.8)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .background(Color("Surface"), in: .rect(cornerRadius: 14, style: .continuous))
-    }
-
-    private func detailRow(label: String, value: String) -> some View {
-        HStack {
+                .font(.system(size: 20, weight: .medium, design: .monospaced))
+                .foregroundStyle(.white)
             Text(label)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(value)
-                .font(.system(.subheadline, design: .monospaced).weight(.medium))
-                .foregroundStyle(Color("Cream"))
+                .font(.system(size: 11, weight: .regular))
+                .foregroundStyle(DesignTokens.textSecondary)
         }
-        .padding(.vertical, 4)
-    }
-
-    private func formatFullDate(_ dateStr: String) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        guard let date = formatter.date(from: dateStr) else { return dateStr }
-        formatter.dateStyle = .long
-        return formatter.string(from: date)
     }
 }
