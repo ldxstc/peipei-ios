@@ -77,22 +77,22 @@ struct PeiPeiApp: App {
 }
 
 private struct RootTabView: View {
+    @State var selectedTab = "coach"
+    
     var body: some View {
-        @State var selectedTab = "coach"
-            TabView(selection: $selectedTab) {
+        TabView(selection: $selectedTab) {
             CoachJournalView()
                 .tag("coach")
                 .tabItem {
-                    Label("Coach", systemImage: "text.bubble")
+                    Text("Coach")
                 }
 
             DataView()
                 .tag("data")
                 .tabItem {
-                    Label("Data", systemImage: "chart.bar")
+                    Text("Data")
                 }
         }
         .tint(Color("Cream"))
-        .background(Color("Background"))
     }
 }
