@@ -79,24 +79,9 @@ xcrun altool --upload-app \
 echo "⏳ Waiting for Apple to process build..."
 echo "   (This typically takes 5-15 minutes)"
 
-# Use fastlane pilot to wait for processing and distribute
-echo "🚀 Distributing to testers..."
-LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 fastlane pilot distribute \
-    --api_key_path <(cat << JSON
-{
-    "key_id": "${ASC_KEY_ID}",
-    "issuer_id": "${ASC_ISSUER_ID}",
-    "key": $(python3 -c "import json; print(json.dumps(open('${ASC_KEY_PATH}').read()))")
-}
-JSON
-) \
-    --app_identifier "com.peipei.app" \
-    --distribute_external true \
-    --notify_external_testers true \
-    --app_platform "ios" \
-  --groups "External Testers" \
-    --app_version "$VERSION" \
-    --build_number "$NEW_BUILD"
+# Poll ASC API for build processing status
+# Internal test groups auto-get all builds — just wait for VALID state
+python3 "$(dirname "$0")/distribute.py" "$VERSION" "$NEW_BUILD"
 
 echo ""
 echo "✅ PeiPei ${VERSION} (${NEW_BUILD}) shipped to TestFlight!"

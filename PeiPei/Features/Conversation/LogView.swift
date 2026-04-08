@@ -349,6 +349,8 @@ private enum LogParser {
                 ?? item.value(at: "subtitle")?.stringScalar
                 ?? [typeLabel(type), metrics].filter { !$0.isEmpty }.joined(separator: " ")
 
+            let actId = item.value(at: "id")?.stringScalar
+
             let detail = RunDetail(
                 title: typeLabel(type).uppercased(),
                 subtitle: day,
@@ -358,7 +360,8 @@ private enum LogParser {
                 avgHeartRate: avgHr.map { "\($0) bpm" } ?? "--",
                 cadence: "\(cadence) spm",
                 coachTake: summary,
-                splits: syntheticSplits(basePace: paceSeconds, baseHr: avgHr, distanceKm: distanceValue)
+                splits: syntheticSplits(basePace: paceSeconds, baseHr: avgHr, distanceKm: distanceValue),
+                activityId: actId
             )
 
             return LogRun(

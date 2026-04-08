@@ -13,6 +13,7 @@
 		0A77BE5B18E71F9EB884CFBB /* DesignTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = 83A542A78338597FE43E37FC /* DesignTokens.swift */; };
 		155540385355F57AE138B0AE /* CoachEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46A66688E41DA3C2BA080A2 /* CoachEntry.swift */; };
 		179207429C848FC71F4F1AEE /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B9B46E6CCDE31BC0E600C00 /* AppModel.swift */; };
+		19D35F0BE1AAA6F87A5ACE69 /* SimilarTrainingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48FDA79DD0D6FFB5D49B8052 /* SimilarTrainingView.swift */; };
 		2743D9307B37D410F3D1BA6E /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504A3ECC64732183D1F298B6 /* Models.swift */; };
 		5414FB054AFC3D4F6464E344 /* MetricExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3F1E21B71FF977D3299B659 /* MetricExtractor.swift */; };
 		5B98B9E04961F1ABE393CA3C /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1C7EB466B1085204715B8CC /* SettingsView.swift */; };
@@ -29,6 +30,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		48FDA79DD0D6FFB5D49B8052 /* SimilarTrainingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimilarTrainingView.swift; sourceTree = "<group>"; };
 		492EA7ED8B74E0B14FF70A46 /* LogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogView.swift; sourceTree = "<group>"; };
 		504A3ECC64732183D1F298B6 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		543E3F6BDD82A463E199575E /* RunnerNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerNote.swift; sourceTree = "<group>"; };
@@ -136,6 +138,7 @@
 			children = (
 				9D80DD39EDA4230C1523EA47 /* PlanView.swift */,
 				5E814613108E9B52E173F4AD /* RunDetailView.swift */,
+				48FDA79DD0D6FFB5D49B8052 /* SimilarTrainingView.swift */,
 			);
 			path = Data;
 			sourceTree = "<group>";
@@ -249,6 +252,7 @@
 				0A2201EF63AA10A7742866CC /* RunnerNote.swift in Sources */,
 				5B98B9E04961F1ABE393CA3C /* SettingsView.swift in Sources */,
 				C698DB68F0294B45FE4715A7 /* SignalView.swift in Sources */,
+				19D35F0BE1AAA6F87A5ACE69 /* SimilarTrainingView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

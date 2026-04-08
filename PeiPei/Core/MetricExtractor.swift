@@ -60,16 +60,51 @@ enum MetricExtractor {
     }
 
     static func deriveDirective(from messages: [CoachMessage], sidebar: SidebarData?) -> DirectiveContent {
+        // Priority 1: Derive from sidebar todayPlan + goalProgress
+        if let sidebar {
+            let planTitle = sidebar.todayPlan.title
+            let planDistance = sidebar.todayPlan.distance
+            let hasPlan = !planTitle.isEmpty && planTitle != "Check today's plan"
+
+            if hasPlan {
+                let instruction = planDistance != "--" && !planDistance.isEmpty
+                    ? "\(planTitle) — \(planDistance)"
+                    : planTitle
+
+                let raceCountdown = buildRaceCountdown(from: sidebar.goalProgress)
+
+                return DirectiveContent(
+                    instruction: instruction,
+                    reasoning: sidebar.goalProgress.detail,
+                    raceCountdown: raceCountdown
+                )
+            }
+        }
+
+        // Fallback: Derive from last assistant message
         let latestAssistant = messages.last(where: { $0.role == .assistant })
         let cleaned = MarkupCleaner.clean(latestAssistant?.content ?? "")
         let split = headlineAndBody(from: cleaned)
         let instruction = split.headline.count > 80 ? String(split.headline.prefix(80)) : split.headline
 
+        let raceCountdown = sidebar.flatMap { buildRaceCountdown(from: $0.goalProgress) }
+
         return DirectiveContent(
             instruction: instruction.isEmpty ? "Preparing your plan..." : instruction,
             reasoning: split.body.isEmpty ? sidebar?.todayPlan.title : split.body,
-            raceCountdown: sidebar?.goalProgress.countdown
+            raceCountdown: raceCountdown ?? sidebar?.goalProgress.countdown
         )
+    }
+
+    private static func buildRaceCountdown(from goal: GoalProgress) -> String? {
+        let countdown = goal.countdown
+        let title = goal.title
+        guard !countdown.isEmpty, countdown != "No race set" else { return nil }
+
+        if title.isEmpty || title == "Goal Progress" {
+            return countdown
+        }
+        return "\(title) · \(countdown)"
     }
 
     static func runDetail(from message: CoachMessage) -> RunDetail {
@@ -100,7 +135,8 @@ enum MetricExtractor {
             avgHeartRate: avgHeartRate,
             cadence: "203 spm",
             coachTake: [narrative.headline, narrative.body].filter { !$0.isEmpty }.joined(separator: "\n\n"),
-            splits: splits
+            splits: splits,
+            activityId: message.id
         )
     }
 

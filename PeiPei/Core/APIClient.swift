@@ -71,6 +71,23 @@ struct APIClient: Sendable {
         }
     }
 
+    func getSimilarTrainings(token: String, activityId: String) async throws -> SimilarTrainingsResult {
+        try await request(
+            path: "/api/training-log/similar?activityId=\(activityId)",
+            method: "GET",
+            token: token
+        )
+    }
+
+    func getActivityInsight(token: String, activityId: String) async throws -> CoachInsightsResponse {
+        try await request(
+            path: "/api/coach/insights",
+            method: "POST",
+            body: InsightRequest(refType: "activity", refId: activityId, insightType: "activity_comparison"),
+            token: token
+        )
+    }
+
     func streamChat(
         token: String,
         messages: [CoachMessage],
@@ -101,6 +118,7 @@ struct APIClient: Sendable {
             guard !trimmed.isEmpty else { continue }
             if trimmed == "[DONE]" || trimmed == "data: [DONE]" { break }
 
+            // SSE format: data: {...}
             if trimmed.hasPrefix("data:") {
                 let value = trimmed.dropFirst(5).trimmingCharacters(in: .whitespaces)
                 if let chunk = parseStreamChunk(String(value)) {
@@ -109,13 +127,18 @@ struct APIClient: Sendable {
                 continue
             }
 
+            // Numbered stream format: 0:{...}
             if let separator = trimmed.firstIndex(of: ":"),
                trimmed[..<separator] == "0" {
                 let value = trimmed[trimmed.index(after: separator)...].trimmingCharacters(in: .whitespaces)
                 if let chunk = parseStreamChunk(value) {
                     await onTextChunk(chunk)
                 }
+                continue
             }
+
+            // Raw text chunk (no SSE envelope)
+            await onTextChunk(trimmed)
         }
     }
 
@@ -234,6 +257,12 @@ private struct LegacySettingsProfile: Codable {
 private struct ChatStreamRequest: Codable {
     let contextType: String
     let messages: [ChatRequestMessage]
+}
+
+private struct InsightRequest: Codable {
+    let refType: String
+    let refId: String
+    let insightType: String
 }
 
 private struct StreamChunkPayload: Codable {

@@ -217,6 +217,7 @@ struct RunDetail: Identifiable, Hashable, Sendable {
     let cadence: String
     let coachTake: String
     let splits: [RunSplit]
+    let activityId: String?
 }
 
 struct RunSplit: Identifiable, Hashable, Sendable {
@@ -306,6 +307,55 @@ enum JSONValue: Codable, Hashable, Sendable {
             try container.encodeNil()
         }
     }
+}
+
+// MARK: - Similar Training Models
+
+struct SimilarActivity: Codable, Identifiable, Hashable, Sendable {
+    let id: String
+    let activityDate: String
+    let workoutType: String?
+    let workoutSubtype: String?
+    let distanceKm: Double?
+    let pacePerKmSeconds: Double?
+    let avgHr: Int?
+    let cadence: Int?
+    let strideLengthM: Double?
+    let trainingPace: Double?
+    let trainingHr: Int?
+    let trainingCadence: Int?
+    let trainingStride: Double?
+    let trainingDistanceKm: Double?
+    let phase: String?
+    let score: Double?
+    let isCurrent: Bool?
+
+    var formattedPace: String {
+        guard let seconds = pacePerKmSeconds, seconds > 0 else { return "--" }
+        let mins = Int(seconds) / 60
+        let secs = Int(seconds) % 60
+        return String(format: "%d:%02d", mins, secs)
+    }
+
+    var paceDelta: Double? {
+        guard let training = trainingPace, let current = pacePerKmSeconds, training > 0 else { return nil }
+        return current - training
+    }
+}
+
+struct SimilarTrainingsResult: Codable, Sendable {
+    let activities: [SimilarActivity]
+    let trend: String?
+    let paceDeltaSeconds: Double?
+}
+
+struct CoachInsight: Codable, Identifiable, Sendable {
+    let id: String
+    let content: String
+}
+
+struct CoachInsightsResponse: Codable, Sendable {
+    let insights: [CoachInsight]
 }
 
 enum APIDateCoding {

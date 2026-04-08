@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RunDetailView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppModel.self) private var app
     let detail: RunDetail
 
     var body: some View {
@@ -21,6 +22,17 @@ struct RunDetailView: View {
                 metricGrid
                 splits
                 coachTake
+
+                // Similar Training Comparison
+                if let activityId = detail.activityId, let token = app.sessionToken {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Similar Workouts")
+                            .font(.system(size: 16, weight: .regular))
+                            .foregroundStyle(DesignTokens.textPrimary)
+
+                        SimilarTrainingView(activityId: activityId, token: token)
+                    }
+                }
             }
             .padding(16)
         }
