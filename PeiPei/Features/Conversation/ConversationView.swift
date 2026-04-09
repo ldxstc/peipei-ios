@@ -91,48 +91,58 @@ struct ConversationView: View {
     }
 
     private var directiveBar: some View {
-        HStack(alignment: .center, spacing: 12) {
-            Button {
-                dismiss()
-            } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(app.directive.instruction)
-                        .font(.system(size: 16, weight: .light))
-                        .foregroundStyle(DesignTokens.textPrimary)
-                        .lineLimit(1)
+        VStack(alignment: .leading, spacing: 8) {
+            // Top row: back arrow + Log + Settings
+            HStack {
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(DesignTokens.textSecondary)
+                }
+                .buttonStyle(.plain)
 
-                    if let countdown = app.directive.raceCountdown {
-                        Text(countdown)
-                            .font(.system(size: 11, weight: .regular, design: .monospaced))
-                            .tracking(1.5)
-                            .foregroundStyle(DesignTokens.textMuted)
-                            .textCase(.uppercase)
+                Spacer()
+
+                if let countdown = app.directive.raceCountdown {
+                    Text(countdown)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .tracking(1)
+                        .foregroundStyle(DesignTokens.garnet)
+                        .textCase(.uppercase)
+                }
+
+                Spacer()
+
+                HStack(spacing: 16) {
+                    Button("Log") {
+                        showLog = true
                     }
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(DesignTokens.textSecondary)
+
+                    Button {
+                        showSettings = true
+                    } label: {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(DesignTokens.textSecondary)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .buttonStyle(.plain)
 
-            Spacer()
-
-            Button("Log") {
-                showLog = true
-            }
-            .font(.system(size: 13, weight: .medium))
-            .foregroundStyle(DesignTokens.textSecondary)
-
-            Spacer()
-
-            Button {
-                showSettings = true
-            } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(DesignTokens.textSecondary)
-            }
-            .buttonStyle(.plain)
+            // Directive text: full width, up to 2 lines
+            Text(app.directive.instruction)
+                .font(.system(size: 15, weight: .regular, design: .serif))
+                .foregroundStyle(DesignTokens.textPrimary)
+                .lineLimit(2)
+                .lineSpacing(2)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 14)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(DesignTokens.separator)
