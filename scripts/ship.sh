@@ -8,6 +8,7 @@ cd "$(dirname "$0")/.."
 # Load ASC credentials
 if [ -f ~/.appstoreconnect/peipei.env ]; then
     source ~/.appstoreconnect/peipei.env
+export ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_PATH
 else
     echo "❌ No ASC API key configured. Run ./scripts/setup-asc-key.sh first."
     exit 1
