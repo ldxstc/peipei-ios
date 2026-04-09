@@ -7,6 +7,10 @@ struct SettingsView: View {
     @State private var units: UnitsPreference = .metric
     @State private var coachLanguage: CoachLanguagePreference = .en
     @State private var customInstructions = ""
+    @State private var garminEmail = ""
+    @State private var garminPassword = ""
+    @State private var garminConnecting = false
+    @State private var garminError: String?
 
     var body: some View {
         Form {
@@ -29,9 +33,36 @@ struct SettingsView: View {
             }
 
             Section("Garmin") {
-                LabeledContent("Status", value: app.settingsPanel?.garmin.connected == true ? "Connected" : "Disconnected")
-                if let email = app.settingsPanel?.garmin.email, !email.isEmpty {
-                    LabeledContent("Email", value: email)
+                if app.settingsPanel?.garmin.connected == true {
+                    LabeledContent("Status", value: "Connected")
+                    if let email = app.settingsPanel?.garmin.email, !email.isEmpty {
+                        LabeledContent("Email", value: email)
+                    }
+                } else {
+                    LabeledContent("Status", value: "Disconnected")
+                        .foregroundStyle(.secondary)
+                    TextField("Garmin email", text: $garminEmail)
+                        .textContentType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    SecureField("Garmin password", text: $garminPassword)
+                        .textContentType(.password)
+                    if let error = garminError {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                    }
+                    Button {
+                        Task { await connectGarmin() }
+                    } label: {
+                        if garminConnecting {
+                            ProgressView()
+                        } else {
+                            Text("Connect Garmin")
+                        }
+                    }
+                    .disabled(garminEmail.isEmpty || garminPassword.isEmpty || garminConnecting)
+                    .foregroundStyle(DesignTokens.garnet)
                 }
             }
 
@@ -78,6 +109,31 @@ struct SettingsView: View {
             units = app.settingsPanel?.units ?? .metric
             coachLanguage = app.settingsPanel?.coachLanguage ?? .en
             customInstructions = app.settingsPanel?.customInstructions ?? ""
+        }
+    }
+
+    private func connectGarmin() async {
+        garminConnecting = true
+        garminError = nil
+        defer { garminConnecting = false }
+
+        guard let token = app.sessionToken else {
+            garminError = "Not signed in."
+            return
+        }
+
+        do {
+            try await app.api.connectGarmin(token: token, email: garminEmail, password: garminPassword)
+            garminPassword = ""
+            // Refresh settings to pick up connected state
+            try? await app.refreshAllData()
+        } catch let error as APIError {
+            switch error {
+            case .httpStatus(_, let msg): garminError = msg
+            default: garminError = "Connection failed."
+            }
+        } catch {
+            garminError = error.localizedDescription
         }
     }
 }

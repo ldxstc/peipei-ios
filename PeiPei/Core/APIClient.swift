@@ -55,6 +55,15 @@ struct APIClient: Sendable {
         return SettingsNormalizer.normalize(payload)
     }
 
+    func connectGarmin(token: String, email: String, password: String) async throws {
+        let _: JSONValue = try await request(
+            path: "/api/garmin/auth",
+            method: "POST",
+            body: ["email": email, "password": password],
+            token: token
+        )
+    }
+
     func patchSettings(token: String, input: SettingsSaveInput) async throws {
         do {
             let _: JSONValue = try await request(path: "/api/settings", method: "PATCH", body: input, token: token)

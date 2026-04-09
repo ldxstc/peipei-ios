@@ -21,7 +21,7 @@ final class AppModel {
     var errorMessage: String?
     var isSending = false
 
-    private let api = APIClient.shared
+    let api = APIClient.shared
     private var hasBootstrapped = false
 
     func bootstrap() async {
