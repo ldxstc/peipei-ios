@@ -1,6 +1,22 @@
 import Foundation
 
 enum MetricExtractor {
+    /// Check if a message contains actual run/workout data (pace, distance, HR)
+    static func hasRunData(in text: String) -> Bool {
+        let lowered = text.lowercased()
+        // Must have at least one metric: pace pattern (X:XX/km), distance (Xkm), or HR (XXX bpm)
+        let hasPace = lowered.range(of: #"\d{1,2}:\d{2}\s*/km"#, options: .regularExpression) != nil
+        let hasDistance = lowered.range(of: #"\d+(?:\.\d+)?\s*km"#, options: .regularExpression) != nil
+        let hasHR = lowered.range(of: #"\d{2,3}\s*bpm"#, options: .regularExpression) != nil
+        // Or explicit workout keywords with numbers
+        let hasWorkoutKeyword = lowered.contains("interval") || lowered.contains("tempo") ||
+            lowered.contains("long run") || lowered.contains("recovery") ||
+            lowered.contains("race pace") || lowered.contains("轻松跑") ||
+            lowered.contains("间歇") || lowered.contains("配速") ||
+            lowered.contains("节奏跑") || lowered.contains("恢复跑")
+        return hasPace || hasDistance || hasHR || hasWorkoutKeyword
+    }
+
     static func workoutType(for text: String) -> WorkoutType {
         let lowered = text.lowercased()
 

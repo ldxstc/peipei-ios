@@ -151,16 +151,17 @@ struct ConversationView: View {
     }
 
     private func sectionHeader(_ title: String) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             Rectangle()
                 .fill(DesignTokens.separator)
                 .frame(height: 0.5)
 
             Text(title)
-                .font(.system(size: 13, weight: .regular))
+                .font(.system(size: 13, weight: .semibold, design: .monospaced))
                 .foregroundStyle(DesignTokens.textSecondary)
+                .tracking(0.5)
         }
-        .padding(.top, 8)
+        .padding(.top, 16)
     }
 
     private func dayLabel(for date: Date) -> String {
@@ -170,6 +171,8 @@ struct ConversationView: View {
         if Calendar.current.isDateInYesterday(date) {
             return "Yesterday"
         }
-        return date.formatted(.dateTime.weekday(.wide))
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEEE, MMM d"
+        return formatter.string(from: date)
     }
 }

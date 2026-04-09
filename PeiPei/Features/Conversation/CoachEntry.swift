@@ -9,6 +9,10 @@ struct CoachEntry: View {
         MetricExtractor.workoutType(for: message.content)
     }
 
+    private var isRunRelated: Bool {
+        MetricExtractor.hasRunData(in: message.content)
+    }
+
     private var metricsLine: String {
         MetricExtractor.metricsLine(from: message.content)
     }
@@ -18,6 +22,15 @@ struct CoachEntry: View {
     }
 
     var body: some View {
+        if isRunRelated {
+            runEntry
+        } else {
+            conversationEntry
+        }
+    }
+
+    // Run-related message: colored border, type label, metrics
+    private var runEntry: some View {
         HStack(alignment: .top, spacing: 0) {
             Rectangle()
                 .fill(workoutType.color)
@@ -39,22 +52,43 @@ struct CoachEntry: View {
                     .buttonStyle(.plain)
                 }
 
-                Text(isExpanded || parts.body.isEmpty ? joinedNarrative : parts.headline)
-                    .font(.system(.body, design: .serif))
-                    .foregroundStyle(DesignTokens.textPrimary)
-                    .lineSpacing(5)
-
-                if !parts.body.isEmpty && !isExpanded {
-                    Button("more") {
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            isExpanded = true
-                        }
-                    }
-                    .font(.system(size: 13))
-                    .foregroundStyle(DesignTokens.textSecondary)
-                }
+                messageText
             }
             .padding(.leading, 12)
+        }
+    }
+
+    // General conversation: no border, no type label, just text
+    private var conversationEntry: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            messageText
+        }
+        .padding(.leading, 15) // Align with run entries (3px border + 12px padding)
+    }
+
+    private var messageText: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(isExpanded || parts.body.isEmpty ? joinedNarrative : parts.headline)
+                .font(.system(.body, design: .serif))
+                .foregroundStyle(DesignTokens.textPrimary)
+                .lineSpacing(5)
+                .onTapGesture(count: 2) {
+                    if isExpanded {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            isExpanded = false
+                        }
+                    }
+                }
+
+            if !parts.body.isEmpty && !isExpanded {
+                Button("more") {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        isExpanded = true
+                    }
+                }
+                .font(.system(size: 13))
+                .foregroundStyle(DesignTokens.textSecondary)
+            }
         }
     }
 

@@ -38,6 +38,14 @@ struct RunDetailView: View {
         }
         .background(DesignTokens.background)
         .toolbar(.hidden, for: .navigationBar)
+        .gesture(
+            DragGesture(minimumDistance: 50)
+                .onEnded { value in
+                    if value.translation.width > 80 && abs(value.translation.height) < 100 {
+                        dismiss()
+                    }
+                }
+        )
     }
 
     private var header: some View {
