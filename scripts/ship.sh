@@ -16,6 +16,9 @@ fi
 # Expand ~ in key path
 ASC_KEY_PATH="${ASC_KEY_PATH/#\~/$HOME}"
 
+# Sync app icons from brand source
+"$(dirname "$0")/sync-icons.sh"
+
 echo "🏗️  Building PeiPei..."
 
 # Auto-increment build number
