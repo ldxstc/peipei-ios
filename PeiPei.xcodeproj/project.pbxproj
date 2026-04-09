@@ -27,9 +27,21 @@
 		C68424BD8E17FF93FB81D67A /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FB91B64D0B10038953BC7FE /* LoginView.swift */; };
 		C698DB68F0294B45FE4715A7 /* SignalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92AA89781FFE69C01456DAF2 /* SignalView.swift */; };
 		CDF496C4B7887FDB8492740D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 87A8E064F5563203C705572F /* Assets.xcassets */; };
+		EF72F249B55120D3276A284F /* PeiPeiUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B8F88510960EC3D418272B3 /* PeiPeiUITests.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		4C5BB3350AFA78D757567806 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7EDE03273F441818B9F93D96 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C597F26E195A1BD2E93BB161;
+			remoteInfo = PeiPei;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		17A98981EF306DA8784014EE /* PeiPeiUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = PeiPeiUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		48FDA79DD0D6FFB5D49B8052 /* SimilarTrainingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimilarTrainingView.swift; sourceTree = "<group>"; };
 		492EA7ED8B74E0B14FF70A46 /* LogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogView.swift; sourceTree = "<group>"; };
 		504A3ECC64732183D1F298B6 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -45,6 +57,7 @@
 		8FB91B64D0B10038953BC7FE /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		92AA89781FFE69C01456DAF2 /* SignalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalView.swift; sourceTree = "<group>"; };
 		9B24C8A6D63FD86E54F75C5D /* PeiPei.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = PeiPei.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		9B8F88510960EC3D418272B3 /* PeiPeiUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeiPeiUITests.swift; sourceTree = "<group>"; };
 		9D80DD39EDA4230C1523EA47 /* PlanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlanView.swift; sourceTree = "<group>"; };
 		A3F1E21B71FF977D3299B659 /* MetricExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricExtractor.swift; sourceTree = "<group>"; };
 		B4A914069CA903B9462EF278 /* ConversationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversationView.swift; sourceTree = "<group>"; };
@@ -109,6 +122,7 @@
 			isa = PBXGroup;
 			children = (
 				9B24C8A6D63FD86E54F75C5D /* PeiPei.app */,
+				17A98981EF306DA8784014EE /* PeiPeiUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -143,6 +157,14 @@
 			path = Data;
 			sourceTree = "<group>";
 		};
+		C8BDE872A423A7028CF0AA8B /* PeiPeiUITests */ = {
+			isa = PBXGroup;
+			children = (
+				9B8F88510960EC3D418272B3 /* PeiPeiUITests.swift */,
+			);
+			path = PeiPeiUITests;
+			sourceTree = "<group>";
+		};
 		D7FEA5F98362866D40C9CA48 /* Features */ = {
 			isa = PBXGroup;
 			children = (
@@ -159,6 +181,7 @@
 			isa = PBXGroup;
 			children = (
 				9D095FF50344EDB83BD10530 /* PeiPei */,
+				C8BDE872A423A7028CF0AA8B /* PeiPeiUITests */,
 				87E790A841F3E0BB9049428C /* Products */,
 			);
 			sourceTree = "<group>";
@@ -184,6 +207,24 @@
 			productReference = 9B24C8A6D63FD86E54F75C5D /* PeiPei.app */;
 			productType = "com.apple.product-type.application";
 		};
+		F0AE83F3DA72049735FAAE94 /* PeiPeiUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FB654DF0197FB28F98AE83CE /* Build configuration list for PBXNativeTarget "PeiPeiUITests" */;
+			buildPhases = (
+				DB06E986FB7771DD2E4EB582 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				64B97EFDB222B01D1E569140 /* PBXTargetDependency */,
+			);
+			name = PeiPeiUITests;
+			packageProductDependencies = (
+			);
+			productName = PeiPeiUITests;
+			productReference = 17A98981EF306DA8784014EE /* PeiPeiUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -196,6 +237,11 @@
 					C597F26E195A1BD2E93BB161 = {
 						DevelopmentTeam = MNB3V4MHFJ;
 						ProvisioningStyle = Automatic;
+					};
+					F0AE83F3DA72049735FAAE94 = {
+						DevelopmentTeam = MNB3V4MHFJ;
+						ProvisioningStyle = Automatic;
+						TestTargetID = C597F26E195A1BD2E93BB161;
 					};
 				};
 			};
@@ -214,6 +260,7 @@
 			projectRoot = "";
 			targets = (
 				C597F26E195A1BD2E93BB161 /* PeiPei */,
+				F0AE83F3DA72049735FAAE94 /* PeiPeiUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -256,7 +303,23 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		DB06E986FB7771DD2E4EB582 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EF72F249B55120D3276A284F /* PeiPeiUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		64B97EFDB222B01D1E569140 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C597F26E195A1BD2E93BB161 /* PeiPei */;
+			targetProxy = 4C5BB3350AFA78D757567806 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		09C7CC9417C43BEB27E46FFE /* Debug */ = {
@@ -273,6 +336,25 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.peipei.app;
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		44FAE8201E3B5D8B1EB68876 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.peipei.app.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "";
+				TEST_TARGET_NAME = PeiPei;
 			};
 			name = Debug;
 		};
@@ -341,7 +423,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 3.0.0;
+				MARKETING_VERSION = 3.0.4;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -349,6 +431,25 @@
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		C23FC9EC0ACDE122A43D0ACD /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.peipei.app.uitests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "";
+				TEST_TARGET_NAME = PeiPei;
 			};
 			name = Release;
 		};
@@ -406,7 +507,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 3.0.0;
+				MARKETING_VERSION = 3.0.4;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -435,6 +536,15 @@
 			buildConfigurations = (
 				09C7CC9417C43BEB27E46FFE /* Debug */,
 				5DEB210BEE9F7B8744D94749 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		FB654DF0197FB28F98AE83CE /* Build configuration list for PBXNativeTarget "PeiPeiUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				44FAE8201E3B5D8B1EB68876 /* Debug */,
+				C23FC9EC0ACDE122A43D0ACD /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

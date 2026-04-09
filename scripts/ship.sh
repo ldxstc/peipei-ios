@@ -20,6 +20,15 @@ ASC_KEY_PATH="${ASC_KEY_PATH/#\~/$HOME}"
 # Sync app icons from brand source
 "$(dirname "$0")/sync-icons.sh"
 
+# Run UI tests before shipping
+echo "🧪 Running UI tests..."
+xcodebuild test -scheme PeiPei -sdk iphonesimulator -destination "platform=iOS Simulator,name=iPhone 17 Pro" -only-testing:PeiPeiUITests -quiet 2>&1 | tail -5
+if [ ${PIPESTATUS[0]} -ne 0 ]; then
+    echo "❌ UI tests failed — aborting ship."
+    exit 1
+fi
+echo "✅ All UI tests passed"
+
 echo "🏗️  Building PeiPei..."
 
 # Auto-increment version (patch bump) and build number

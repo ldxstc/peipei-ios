@@ -11,6 +11,17 @@ settings:
     SWIFT_VERSION: "6.0"
     MARKETING_VERSION: "3.0.4"
     CURRENT_PROJECT_VERSION: "1"
+schemes:
+  PeiPei:
+    build:
+      targets:
+        PeiPei: all
+        PeiPeiUITests: [test]
+    test:
+      targets:
+        - PeiPeiUITests
+    run:
+      config: Debug
 targets:
   PeiPei:
     type: application
@@ -44,3 +55,17 @@ targets:
         NSMicrophoneUsageDescription: "PeiPei needs microphone access to record voice messages for your coach."
         NSCameraUsageDescription: "PeiPei needs camera access to capture photos to share with your coach."
         NSPhotoLibraryUsageDescription: "PeiPei needs photo library access to attach images to your messages."
+  PeiPeiUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - PeiPeiUITests
+    dependencies:
+      - target: PeiPei
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.peipei.app.uitests
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: ""
+        BUNDLE_LOADER: ""
