@@ -13,14 +13,14 @@ struct ConversationView: View {
             Calendar.current.startOfDay(for: message.createdAt)
         }
         .keys
-        .sorted(by: >)
+        .sorted(by: <)
         .map { day in
             DaySection(
                 id: day.formatted(date: .abbreviated, time: .omitted),
                 dateLabel: dayLabel(for: day),
                 messages: app.messages
                     .filter { Calendar.current.isDate($0.createdAt, inSameDayAs: day) }
-                    .sorted { $0.createdAt > $1.createdAt }
+                    .sorted { $0.createdAt < $1.createdAt }
             )
         }
     }
@@ -29,24 +29,35 @@ struct ConversationView: View {
         VStack(spacing: 0) {
             directiveBar
 
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 32) {
-                    ForEach(daySections) { section in
-                        sectionHeader(section.dateLabel)
-                        ForEach(section.messages) { message in
-                            if message.role == .assistant {
-                                CoachEntry(message: message) {
-                                    selectedRun = MetricExtractor.runDetail(from: message)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 32) {
+                        ForEach(daySections) { section in
+                            sectionHeader(section.dateLabel)
+                            ForEach(section.messages) { message in
+                                if message.role == .assistant {
+                                    CoachEntry(message: message) {
+                                        selectedRun = MetricExtractor.runDetail(from: message)
+                                    }
+                                } else {
+                                    RunnerNote(message: message)
                                 }
-                            } else {
-                                RunnerNote(message: message)
                             }
                         }
+                        Color.clear.frame(height: 1).id("bottom")
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 80)
+                }
+                .onAppear {
+                    proxy.scrollTo("bottom", anchor: .bottom)
+                }
+                .onChange(of: app.messages.count) {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        proxy.scrollTo("bottom", anchor: .bottom)
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 80)
             }
             .refreshable {
                 await app.refreshConversation()

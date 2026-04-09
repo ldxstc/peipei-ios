@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """
-Poll App Store Connect for build processing status.
-Internal test groups auto-get all builds, so no group assignment needed.
-Just wait until the build reaches VALID state.
+Poll App Store Connect for build processing, then add to test group.
 
 Usage: python3 distribute.py <version> <build_number>
 
@@ -15,7 +13,6 @@ import os
 import sys
 import time
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 try:
     import jwt
@@ -25,6 +22,7 @@ except ImportError:
     sys.exit(1)
 
 APP_ID = "6761196995"  # PeiPei app ID in ASC
+TEST_GROUP_NAME = "PeiPei-Run Testers"
 POLL_INTERVAL = 30  # seconds
 MAX_WAIT = 1200  # 20 minutes
 
@@ -46,9 +44,12 @@ def generate_token(key_id: str, issuer_id: str, key_path: str) -> str:
     return jwt.encode(payload, private_key, algorithm="ES256", headers={"kid": key_id})
 
 
+def auth_headers(token: str) -> dict:
+    return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+
 def get_build(token: str, version: str, build_number: str) -> dict | None:
     """Find a specific build by version and build number."""
-    headers = {"Authorization": f"Bearer {token}"}
     url = (
         f"https://api.appstoreconnect.apple.com/v1/builds"
         f"?filter[app]={APP_ID}"
@@ -56,13 +57,41 @@ def get_build(token: str, version: str, build_number: str) -> dict | None:
         f"&filter[preReleaseVersion.version]={version}"
         f"&limit=1"
     )
-
-    resp = requests.get(url, headers=headers)
+    resp = requests.get(url, headers=auth_headers(token))
     resp.raise_for_status()
-    data = resp.json()
-
-    builds = data.get("data", [])
+    builds = resp.json().get("data", [])
     return builds[0] if builds else None
+
+
+def find_test_group(token: str) -> str | None:
+    """Find the beta group ID by name."""
+    url = (
+        f"https://api.appstoreconnect.apple.com/v1/apps/{APP_ID}/betaGroups"
+        f"?filter[name]={TEST_GROUP_NAME}"
+        f"&limit=5"
+    )
+    resp = requests.get(url, headers=auth_headers(token))
+    resp.raise_for_status()
+    groups = resp.json().get("data", [])
+    for g in groups:
+        if g["attributes"]["name"] == TEST_GROUP_NAME:
+            return g["id"]
+    return None
+
+
+def add_build_to_group(token: str, group_id: str, build_id: str) -> bool:
+    """Add a build to a beta test group."""
+    url = f"https://api.appstoreconnect.apple.com/v1/betaGroups/{group_id}/relationships/builds"
+    body = {"data": [{"type": "builds", "id": build_id}]}
+    resp = requests.post(url, headers=auth_headers(token), json=body)
+    if resp.status_code in (200, 204):
+        return True
+    elif resp.status_code == 409:
+        # Already added
+        return True
+    else:
+        print(f"   ⚠️ Failed to add build to group: {resp.status_code} {resp.text[:200]}")
+        return False
 
 
 def main():
@@ -99,7 +128,20 @@ def main():
                 print(f"   Build state: {state}")
 
                 if state == "VALID":
-                    print("✅ Build is VALID — available in TestFlight!")
+                    build_id = build["id"]
+                    print(f"✅ Build is VALID (id: {build_id})")
+
+                    # Find and add to test group
+                    group_id = find_test_group(token)
+                    if group_id:
+                        print(f"📱 Adding to '{TEST_GROUP_NAME}' (group: {group_id})...")
+                        if add_build_to_group(token, group_id, build_id):
+                            print(f"✅ Build added to '{TEST_GROUP_NAME}' — testers notified!")
+                        else:
+                            print(f"⚠️ Could not add to group. Add manually in ASC.")
+                    else:
+                        print(f"⚠️ Test group '{TEST_GROUP_NAME}' not found. Add build manually.")
+
                     return
                 elif state == "FAILED":
                     print("❌ Build processing FAILED")
