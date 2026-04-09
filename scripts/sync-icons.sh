@@ -2,7 +2,7 @@
 # Sync app icons from web app brand source — ensures correct logo in every build
 set -e
 
-BRAND_ICON="/Users/ldxstc/personal/peipei/public/brand/icon-1024.png"
+BRAND_ICON="/Users/ldxstc/personal/peipei/public/icon-512.png"
 ICON_DIR="$(dirname "$0")/../PeiPei/Resources/Assets.xcassets/AppIcon.appiconset"
 
 if [ ! -f "$BRAND_ICON" ]; then
@@ -17,9 +17,8 @@ import os, sys
 src = '$BRAND_ICON'
 dst = '$ICON_DIR'
 
-img = Image.open(src).convert('RGBA')
-bg = Image.new('RGB', img.size, (0, 0, 0))
-bg.paste(img, mask=img.split()[3])
+img = Image.open(src).convert('RGB')  # P-hook logo, already opaque
+bg = img
 
 sizes = {
     'Icon-1024.png': 1024,
