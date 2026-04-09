@@ -40,6 +40,14 @@ struct APIClient: Sendable {
         return try await request(path: "/api/auth/sign-in/social", method: "POST", body: payload, token: nil)
     }
 
+    func signInWithGoogle(idToken: String, accessToken: String) async throws -> LoginResponse {
+        let payload = GoogleSignInRequest(
+            provider: "google",
+            idToken: GoogleTokenPayload(token: idToken, accessToken: accessToken)
+        )
+        return try await request(path: "/api/auth/sign-in/social", method: "POST", body: payload, token: nil)
+    }
+
     func getCoachChat(token: String) async throws -> CoachChatResponse {
         let payload: CoachChatEnvelope = try await request(path: "/api/coach/chat", method: "GET", token: token)
         return CoachChatResponse(messages: payload.messages, hasMore: payload.hasMore)
@@ -250,6 +258,16 @@ private struct AppleSignInRequest: Codable {
     let provider: String
     let idToken: AppleTokenPayload
     let name: String?
+}
+
+private struct GoogleTokenPayload: Codable {
+    let token: String
+    let accessToken: String
+}
+
+private struct GoogleSignInRequest: Codable {
+    let provider: String
+    let idToken: GoogleTokenPayload
 }
 
 private struct LegacySettingsPatchRequest: Codable {

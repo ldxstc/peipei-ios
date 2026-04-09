@@ -85,6 +85,19 @@ final class AppModel {
         }
     }
 
+    func signInWithGoogle(idToken: String, accessToken: String) async {
+        do {
+            let response = try await api.signInWithGoogle(idToken: idToken, accessToken: accessToken)
+            try KeychainHelper.saveSessionToken(response.token)
+            sessionToken = response.token
+            currentUser = response.user
+            try await refreshAllData()
+            startupState = .loggedIn
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func refreshAllData() async throws {
         guard let token = sessionToken, !token.isEmpty else {
             throw APIError.httpStatus(401, "You are signed out.")

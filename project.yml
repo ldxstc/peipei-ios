@@ -11,6 +11,10 @@ settings:
     SWIFT_VERSION: "6.0"
     MARKETING_VERSION: "3.0.6"
     CURRENT_PROJECT_VERSION: "1"
+packages:
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    from: "8.0.0"
 schemes:
   PeiPei:
     build:
@@ -28,11 +32,15 @@ targets:
     platform: iOS
     sources:
       - PeiPei
+    dependencies:
+      - package: GoogleSignIn
     settings:
       base:
         INFOPLIST_FILE: PeiPei/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: com.peipei.app
         CODE_SIGN_STYLE: Automatic
+        GOOGLE_CLIENT_ID: 994446502706-4tnjlivm1e9g0a8ecv148fh9sm0bnd7o.apps.googleusercontent.com
+        GOOGLE_URL_SCHEME: com.googleusercontent.apps.994446502706-4tnjlivm1e9g0a8ecv148fh9sm0bnd7o
     info:
       path: PeiPei/Info.plist
       properties:
@@ -52,6 +60,10 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         ITSAppUsesNonExemptEncryption: false
+        GIDClientID: 994446502706-4tnjlivm1e9g0a8ecv148fh9sm0bnd7o.apps.googleusercontent.com
+        CFBundleURLTypes:
+          - CFBundleURLSchemes:
+              - com.googleusercontent.apps.994446502706-4tnjlivm1e9g0a8ecv148fh9sm0bnd7o
         NSMicrophoneUsageDescription: "PeiPei needs microphone access to record voice messages for your coach."
         NSCameraUsageDescription: "PeiPei needs camera access to capture photos to share with your coach."
         NSPhotoLibraryUsageDescription: "PeiPei needs photo library access to attach images to your messages."

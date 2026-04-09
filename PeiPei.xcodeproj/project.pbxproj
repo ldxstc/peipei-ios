@@ -21,6 +21,7 @@
 		6CF3C8B3517CDA14B02F981B /* PlanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D80DD39EDA4230C1523EA47 /* PlanView.swift */; };
 		6F316A0653EA961AB96FB490 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8938750CAD1707E43441B5FA /* APIClient.swift */; };
 		83149FCB02C8F0876EF27011 /* MarkupCleaner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6570A7B0909E4F54AC08427F /* MarkupCleaner.swift */; };
+		8CFABB83D32E1229EBAA7256 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = EA48C3FC7639B1FB4566C188 /* GoogleSignIn */; };
 		BD24A4ADF103EE4D50E14E06 /* LogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 492EA7ED8B74E0B14FF70A46 /* LogView.swift */; };
 		C2C83BE65840C31608E7C25D /* KeychainHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = D53F8789B2E8F297BE7EBD96 /* KeychainHelper.swift */; };
 		C613C6073A8B291E96DD1071 /* ComposerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF6F669AB45258C9D6053352 /* ComposerView.swift */; };
@@ -66,6 +67,17 @@
 		D53F8789B2E8F297BE7EBD96 /* KeychainHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainHelper.swift; sourceTree = "<group>"; };
 		F1C7EB466B1085204715B8CC /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		E98F4351A4F81BD0CD8AF704 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8CFABB83D32E1229EBAA7256 /* GoogleSignIn in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		0FEBDF2720E5B8CE3F1D3193 /* Signal */ = {
@@ -195,6 +207,7 @@
 			buildPhases = (
 				9F7618BD2170F3BAAF418C28 /* Sources */,
 				31BD291BDC3BB6B135DECBEF /* Resources */,
+				E98F4351A4F81BD0CD8AF704 /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -202,6 +215,7 @@
 			);
 			name = PeiPei;
 			packageProductDependencies = (
+				EA48C3FC7639B1FB4566C188 /* GoogleSignIn */,
 			);
 			productName = PeiPei;
 			productReference = 9B24C8A6D63FD86E54F75C5D /* PeiPei.app */;
@@ -254,6 +268,9 @@
 			);
 			mainGroup = EB06D6BB7CC198490898950D;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				798CBF33C83D8FF6A582863D /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 87E790A841F3E0BB9049428C /* Products */;
 			projectDirPath = "";
@@ -328,6 +345,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
+				GOOGLE_CLIENT_ID = "994446502706-4tnjlivm1e9g0a8ecv148fh9sm0bnd7o.apps.googleusercontent.com";
+				GOOGLE_URL_SCHEME = "com.googleusercontent.apps.994446502706-4tnjlivm1e9g0a8ecv148fh9sm0bnd7o";
 				INFOPLIST_FILE = PeiPei/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -364,6 +383,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
+				GOOGLE_CLIENT_ID = "994446502706-4tnjlivm1e9g0a8ecv148fh9sm0bnd7o.apps.googleusercontent.com";
+				GOOGLE_URL_SCHEME = "com.googleusercontent.apps.994446502706-4tnjlivm1e9g0a8ecv148fh9sm0bnd7o";
 				INFOPLIST_FILE = PeiPei/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -423,7 +444,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 3.0.4;
+				MARKETING_VERSION = 3.0.6;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -507,7 +528,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 3.0.4;
+				MARKETING_VERSION = 3.0.6;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -550,6 +571,25 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		798CBF33C83D8FF6A582863D /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 8.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		EA48C3FC7639B1FB4566C188 /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 798CBF33C83D8FF6A582863D /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 7EDE03273F441818B9F93D96 /* Project object */;
 }
