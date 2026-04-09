@@ -131,9 +131,22 @@ def main():
                 state = build["attributes"]["processingState"]
                 print(f"   Build state: {state}")
 
-                if state == "VALID":
+                if state == "PROCESSING":
+                    pass  # Still processing, keep polling
+                elif state == "VALID":
                     build_id = build["id"]
                     print(f"✅ Build is VALID (id: {build_id})")
+                elif state == "MISSING_EXPORT_COMPLIANCE" or "MISSING" in state:
+                    build_id = build["id"]
+                    print(f"   Setting export compliance (no encryption)...")
+                    resp = requests.patch(
+                        f"https://api.appstoreconnect.apple.com/v1/builds/{build_id}",
+                        headers=auth_headers(token),
+                        json={"data": {"type": "builds", "id": build_id, "attributes": {"usesNonExemptEncryption": False}}}
+                    )
+                    if resp.status_code in (200, 204):
+                        print(f"   ✅ Export compliance set — continuing...")
+                    continue
 
                     # Find and add to test group
                     group_id = find_test_group(token)
