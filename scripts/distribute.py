@@ -89,6 +89,10 @@ def add_build_to_group(token: str, group_id: str, build_id: str) -> bool:
     elif resp.status_code == 409:
         # Already added
         return True
+    elif resp.status_code == 422:
+        # Internal groups auto-get all builds — no assignment needed
+        print(f"   ℹ️  '{TEST_GROUP_NAME}' is an internal group — builds are distributed automatically.")
+        return True
     else:
         print(f"   ⚠️ Failed to add build to group: {resp.status_code} {resp.text[:200]}")
         return False
