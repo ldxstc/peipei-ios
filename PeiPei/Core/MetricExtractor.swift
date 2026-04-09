@@ -59,20 +59,37 @@ enum MetricExtractor {
             return ("No update yet.", "")
         }
 
-        let sentences = cleaned.split(whereSeparator: \.isNewline).flatMap { line -> [String] in
-            line.split(separator: ".", omittingEmptySubsequences: true).map { segment in
-                segment.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Split on paragraph breaks first
+        let paragraphs = cleaned.components(separatedBy: "\n\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        guard let firstParagraph = paragraphs.first else {
+            return (String(cleaned.prefix(120)), "")
+        }
+
+        // For short messages (1 paragraph), try sentence split
+        if paragraphs.count == 1 {
+            // Split on sentence-ending punctuation (。.!！?？)
+            let sentencePattern = #"[。\.\!！\?？]"#
+            if let range = firstParagraph.range(of: sentencePattern, options: .regularExpression) {
+                let endIdx = firstParagraph.index(after: range.lowerBound)
+                let headline = String(firstParagraph[..<endIdx])
+                let remainder = String(firstParagraph[endIdx...]).trimmingCharacters(in: .whitespacesAndNewlines)
+                return (headline, remainder)
             }
+            // No sentence break — truncate at ~120 chars
+            if firstParagraph.count > 120 {
+                let idx = firstParagraph.index(firstParagraph.startIndex, offsetBy: 120)
+                return (String(firstParagraph[..<idx]) + "…", String(firstParagraph[idx...]))
+            }
+            return (firstParagraph, "")
         }
 
-        guard let first = sentences.first, !first.isEmpty else {
-            return (String(cleaned.prefix(100)), "")
-        }
-
-        let headline = first.hasSuffix(".") ? first : "\(first)."
-        let remainder = cleaned.replacingOccurrences(of: headline, with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return (headline, remainder)
+        // Multiple paragraphs: first paragraph is headline, rest is body
+        let headline = firstParagraph
+        let body = paragraphs.dropFirst().joined(separator: "\n\n")
+        return (headline, body)
     }
 
     static func deriveDirective(from messages: [CoachMessage], sidebar: SidebarData?) -> DirectiveContent {
@@ -97,17 +114,42 @@ enum MetricExtractor {
             }
         }
 
-        // Fallback: Derive from last assistant message
-        let latestAssistant = messages.last(where: { $0.role == .assistant })
-        let cleaned = MarkupCleaner.clean(latestAssistant?.content ?? "")
-        let split = headlineAndBody(from: cleaned)
-        let instruction = split.headline.count > 80 ? String(split.headline.prefix(80)) : split.headline
+        // Fallback: Find the most recent training-related assistant message
+        let trainingMessage = messages.last(where: { $0.role == .assistant && hasRunData(in: $0.content) })
+        let lastAssistant = messages.last(where: { $0.role == .assistant })
+        let bestMessage = trainingMessage ?? lastAssistant
 
         let raceCountdown = sidebar.flatMap { buildRaceCountdown(from: $0.goalProgress) }
 
+        guard let msg = bestMessage else {
+            return DirectiveContent(
+                instruction: "Preparing your plan...",
+                reasoning: nil,
+                raceCountdown: raceCountdown ?? sidebar?.goalProgress.countdown
+            )
+        }
+
+        let cleaned = MarkupCleaner.clean(msg.content)
+
+        // If it's a training message, extract the workout type + metrics as directive
+        if hasRunData(in: msg.content) {
+            let wtype = workoutType(for: msg.content)
+            let metrics = metricsLine(from: msg.content)
+            let instruction = metrics.isEmpty ? wtype.label : "\(wtype.label) — \(metrics)"
+            return DirectiveContent(
+                instruction: instruction,
+                reasoning: nil,
+                raceCountdown: raceCountdown ?? sidebar?.goalProgress.countdown
+            )
+        }
+
+        // General message — show a short summary
+        let split = headlineAndBody(from: cleaned)
+        let instruction = split.headline.count > 80 ? String(split.headline.prefix(80)) : split.headline
+
         return DirectiveContent(
             instruction: instruction.isEmpty ? "Preparing your plan..." : instruction,
-            reasoning: split.body.isEmpty ? sidebar?.todayPlan.title : split.body,
+            reasoning: nil,
             raceCountdown: raceCountdown ?? sidebar?.goalProgress.countdown
         )
     }
