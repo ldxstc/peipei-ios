@@ -21,11 +21,23 @@ ASC_KEY_PATH="${ASC_KEY_PATH/#\~/$HOME}"
 
 echo "🏗️  Building PeiPei..."
 
-# Auto-increment build number
+# Auto-increment version (patch bump) and build number
+CURRENT_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" PeiPei/Info.plist)
 CURRENT_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" PeiPei/Info.plist)
+
+# Bump patch version: 3.0.0 → 3.0.1, 3.0.1 → 3.0.2, etc.
+IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+NEW_PATCH=$((PATCH + 1))
+VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
 NEW_BUILD=$((CURRENT_BUILD + 1))
+
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" PeiPei/Info.plist
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $NEW_BUILD" PeiPei/Info.plist
-VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" PeiPei/Info.plist)
+
+# Also update project.yml so xcodegen stays in sync
+sed -i '' "s/MARKETING_VERSION: \".*\"/MARKETING_VERSION: \"$VERSION\"/" project.yml
+sed -i '' "s/CFBundleShortVersionString: \".*\"/CFBundleShortVersionString: \"$VERSION\"/" project.yml
+
 echo "   Version: ${VERSION} (${NEW_BUILD})"
 
 # Archive
