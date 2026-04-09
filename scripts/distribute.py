@@ -24,7 +24,7 @@ except ImportError:
     print("❌ Missing dependencies. Install with: pip3 install PyJWT requests")
     sys.exit(1)
 
-APP_ID = "6745013498"  # PeiPei app ID in ASC
+APP_ID = "6761196995"  # PeiPei app ID in ASC
 POLL_INTERVAL = 30  # seconds
 MAX_WAIT = 1200  # 20 minutes
 
