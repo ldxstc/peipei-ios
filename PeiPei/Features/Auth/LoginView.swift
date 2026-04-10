@@ -6,8 +6,6 @@ import UIKit
 
 struct LoginView: View {
     @Environment(AppModel.self) private var app
-    @State private var email = ""
-    @State private var password = ""
     @State private var nonce: String?
     @State private var isLoading = false
 
@@ -15,19 +13,21 @@ struct LoginView: View {
         ZStack {
             DesignTokens.background.ignoresSafeArea()
 
-            VStack(alignment: .leading, spacing: 28) {
+            VStack(spacing: 0) {
                 Spacer()
 
                 // Brand
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(spacing: 14) {
                     Text("PeiPei")
-                        .font(.system(size: 38, weight: .light))
+                        .font(.system(size: 42, weight: .light))
                         .foregroundStyle(DesignTokens.textPrimary)
 
                     Text("The coach already looked at everything.")
                         .font(.system(.body, design: .serif))
                         .foregroundStyle(DesignTokens.textSecondary)
                 }
+
+                Spacer()
 
                 // Social login buttons
                 VStack(spacing: 12) {
@@ -68,46 +68,6 @@ struct LoginView: View {
                         .frame(height: 52)
                         .background(.white)
                     }
-                }
-
-                // Divider
-                HStack {
-                    Rectangle().fill(DesignTokens.separator).frame(height: 0.5)
-                    Text("or")
-                        .font(.system(size: 13))
-                        .foregroundStyle(DesignTokens.textMuted)
-                        .padding(.horizontal, 12)
-                    Rectangle().fill(DesignTokens.separator).frame(height: 0.5)
-                }
-
-                // Email/password
-                VStack(spacing: 14) {
-                    textField("Email", text: $email, contentType: .emailAddress)
-                    secureField("Password", text: $password)
-
-                    Button {
-                        Task {
-                            isLoading = true
-                            await app.signIn(email: email, password: password)
-                            isLoading = false
-                        }
-                    } label: {
-                        HStack {
-                            if isLoading {
-                                ProgressView()
-                                    .tint(.white)
-                            } else {
-                                Text("Enter")
-                                Spacer()
-                                Image(systemName: "arrow.up.right")
-                            }
-                        }
-                        .font(.system(size: 17, weight: .medium))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 16)
-                        .background(DesignTokens.garnet)
-                    }
                     .disabled(isLoading)
                 }
 
@@ -116,13 +76,20 @@ struct LoginView: View {
                     Text(error)
                         .font(.caption)
                         .foregroundStyle(.red)
-                        .padding(.top, 4)
+                        .padding(.top, 12)
+                }
+
+                // Loading
+                if isLoading {
+                    ProgressView()
+                        .tint(.white)
+                        .padding(.top, 16)
                 }
 
                 Spacer()
+                    .frame(height: 60)
             }
             .padding(.horizontal, 24)
-            .padding(.vertical, 32)
         }
     }
 
@@ -139,11 +106,12 @@ struct LoginView: View {
         }
 
         do {
-            // Configure server client ID so Google returns an ID token for our backend
             let serverClientID = Bundle.main.object(forInfoDictionaryKey: "GIDServerClientID") as? String
-            let hint = GIDSignIn.sharedInstance.configuration.flatMap { _ in serverClientID }
             if let serverID = serverClientID {
-                GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: Bundle.main.object(forInfoDictionaryKey: "GIDClientID") as? String ?? "", serverClientID: serverID)
+                GIDSignIn.sharedInstance.configuration = GIDConfiguration(
+                    clientID: Bundle.main.object(forInfoDictionaryKey: "GIDClientID") as? String ?? "",
+                    serverClientID: serverID
+                )
             }
 
             let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: rootVC)
@@ -155,41 +123,13 @@ struct LoginView: View {
             await app.signInWithGoogle(idToken: idToken, accessToken: accessToken)
         } catch {
             if (error as NSError).code == GIDSignInError.canceled.rawValue {
-                return // User cancelled
+                return
             }
             app.errorMessage = error.localizedDescription
         }
     }
 
     // MARK: - Helpers
-
-    private func textField(_ title: String, text: Binding<String>, contentType: UITextContentType) -> some View {
-        TextField(title, text: text)
-            .textContentType(contentType)
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-            .padding(.horizontal, 16)
-            .padding(.vertical, 16)
-            .background(Color.white.opacity(0.04))
-            .foregroundStyle(DesignTokens.textPrimary)
-            .overlay {
-                RoundedRectangle(cornerRadius: 0)
-                    .stroke(DesignTokens.separator, lineWidth: 1)
-            }
-    }
-
-    private func secureField(_ title: String, text: Binding<String>) -> some View {
-        SecureField(title, text: text)
-            .textContentType(.password)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 16)
-            .background(Color.white.opacity(0.04))
-            .foregroundStyle(DesignTokens.textPrimary)
-            .overlay {
-                RoundedRectangle(cornerRadius: 0)
-                    .stroke(DesignTokens.separator, lineWidth: 1)
-            }
-    }
 
     private func randomNonce(length: Int = 32) -> String {
         let charset = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
