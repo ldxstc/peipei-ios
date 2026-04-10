@@ -39,6 +39,10 @@ struct ConversationView: View {
                                     CoachEntry(message: message) {
                                         selectedRun = MetricExtractor.runDetail(from: message)
                                     }
+                                    // Show Connect Garmin card if message mentions it and not connected
+                                    if message.content.lowercased().contains("garmin") && app.settingsPanel?.garmin.connected != true {
+                                        garminConnectCard
+                                    }
                                 } else {
                                     RunnerNote(message: message)
                                 }
@@ -148,6 +152,38 @@ struct ConversationView: View {
                 .fill(DesignTokens.separator)
                 .frame(height: 0.5)
         }
+    }
+
+    private var garminConnectCard: some View {
+        Button {
+            showSettings = true
+        } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "applewatch.and.arrow.forward")
+                    .font(.system(size: 18))
+                    .foregroundStyle(DesignTokens.garnet)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Connect Garmin")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(.white)
+                    Text("Your coach will analyze your training history")
+                        .font(.system(size: 12))
+                        .foregroundStyle(DesignTokens.textSecondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(DesignTokens.textMuted)
+            }
+            .padding(16)
+            .background(Color.white.opacity(0.04))
+            .overlay {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(DesignTokens.separator, lineWidth: 0.5)
+            }
+        }
+        .buttonStyle(.plain)
+        .padding(.leading, 15)
     }
 
     private func sectionHeader(_ title: String) -> some View {

@@ -145,7 +145,15 @@ enum MetricExtractor {
 
         // General message — show a short summary
         let split = headlineAndBody(from: cleaned)
-        let instruction = split.headline.count > 80 ? String(split.headline.prefix(80)) : split.headline
+        var instruction = split.headline
+
+        // If headline is too short/uninformative (like "Hey."), use more of the message
+        if instruction.count < 20 && !split.body.isEmpty {
+            let combined = [split.headline, split.body].joined(separator: " ")
+            instruction = combined.count > 100 ? String(combined.prefix(100)) + "…" : combined
+        } else if instruction.count > 100 {
+            instruction = String(instruction.prefix(100)) + "…"
+        }
 
         return DirectiveContent(
             instruction: instruction.isEmpty ? "Preparing your plan..." : instruction,
