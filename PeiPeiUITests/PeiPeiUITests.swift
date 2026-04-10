@@ -11,7 +11,7 @@ private extension XCUIApplication {
     }
 
     var isOnLoginScreen: Bool {
-        staticTexts["PeiPei"].exists && buttons["Enter"].exists
+        staticTexts["PeiPei"].exists && buttons.matching(NSPredicate(format: "label CONTAINS 'Apple'")).firstMatch.exists
     }
 }
 
@@ -72,26 +72,22 @@ final class LoginTests: XCTestCase {
         XCTAssertTrue(tagline.exists, "Tagline should be visible")
     }
 
-    func testLoginHasEmailField() throws {
-        guard app.isOnLoginScreen else { throw XCTSkip("Not on login") }
-        XCTAssertTrue(app.textFields.firstMatch.exists, "Email field should exist")
-    }
-
-    func testLoginHasPasswordField() throws {
-        guard app.isOnLoginScreen else { throw XCTSkip("Not on login") }
-        XCTAssertTrue(app.secureTextFields.firstMatch.exists, "Password field should exist")
-    }
-
-    func testLoginHasEnterButton() throws {
-        guard app.isOnLoginScreen else { throw XCTSkip("Not on login") }
-        let enter = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Enter'")).firstMatch
-        XCTAssertTrue(enter.exists, "Enter button should exist")
-    }
-
     func testLoginHasAppleSignIn() throws {
         guard app.isOnLoginScreen else { throw XCTSkip("Not on login") }
         let apple = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Apple'")).firstMatch
         XCTAssertTrue(apple.exists, "Sign in with Apple button should exist")
+    }
+
+    func testLoginHasGoogleSignIn() throws {
+        guard app.isOnLoginScreen else { throw XCTSkip("Not on login") }
+        let google = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Google'")).firstMatch
+        XCTAssertTrue(google.exists, "Sign in with Google button should exist")
+    }
+
+    func testLoginHasNoEmailField() throws {
+        guard app.isOnLoginScreen else { throw XCTSkip("Not on login") }
+        // Email/password removed — social only
+        XCTAssertFalse(app.textFields.matching(NSPredicate(format: "placeholderValue == 'Email'")).firstMatch.exists, "Email field should NOT exist")
     }
 }
 
