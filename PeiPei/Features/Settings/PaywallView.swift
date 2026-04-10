@@ -66,6 +66,23 @@ struct PaywallView: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
                             }
                             .disabled(store.purchaseState == .purchasing)
+                        } else if let error = store.loadError {
+                            VStack(spacing: 12) {
+                                Text(error)
+                                    .font(.caption)
+                                    .foregroundStyle(DesignTokens.textSecondary)
+                                    .multilineTextAlignment(.center)
+
+                                Button {
+                                    Task { await store.loadProducts() }
+                                } label: {
+                                    Text("Try Again")
+                                        .font(.system(size: 15, weight: .medium))
+                                        .foregroundStyle(DesignTokens.garnet)
+                                }
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 16)
                         } else {
                             ProgressView()
                                 .tint(.white)

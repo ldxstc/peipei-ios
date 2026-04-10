@@ -34,10 +34,19 @@ final class StoreManager {
 
     // MARK: - Load Products
 
+    private(set) var loadError: String?
+
     func loadProducts() async {
         do {
-            products = try await Product.products(for: [Self.proMonthlyID])
+            let loaded = try await Product.products(for: [Self.proMonthlyID])
+            products = loaded
+            if loaded.isEmpty {
+                loadError = "Product not found in App Store. It may take up to an hour after creation to propagate."
+            } else {
+                loadError = nil
+            }
         } catch {
+            loadError = error.localizedDescription
             print("[StoreManager] Failed to load products: \(error)")
         }
     }

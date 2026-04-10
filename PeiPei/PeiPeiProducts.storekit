@@ -1,0 +1,69 @@
+{
+  "identifier" : "D8A8F3E2-1234-4567-8901-ABCDEF012345",
+  "nonRenewingSubscriptions" : [
+
+  ],
+  "products" : [
+
+  ],
+  "settings" : {
+    "_applicationInternalID" : "6761196995",
+    "_developerTeamID" : "MNB3V4MHFJ",
+    "_failTransactionsEnabled" : false,
+    "_lastSynchronizedDate" : 744825600,
+    "_storeKitErrors" : [
+      {
+        "current" : null,
+        "enabled" : false,
+        "name" : "Load Products"
+      }
+    ]
+  },
+  "subscriptionGroups" : [
+    {
+      "id" : "21610837",
+      "localizations" : [
+        {
+          "description" : "PeiPei Pro subscription group",
+          "displayName" : "PeiPei Pro",
+          "locale" : "en_US"
+        }
+      ],
+      "name" : "PeiPei Pro",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [
+
+          ],
+          "codeOffers" : [
+
+          ],
+          "displayPrice" : "19.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "6761196995_monthly",
+          "introductoryOffer" : null,
+          "localizations" : [
+            {
+              "description" : "Advanced AI running coach",
+              "displayName" : "PeiPei Pro",
+              "locale" : "en_US"
+            }
+          ],
+          "productID" : "com.peipei.pro.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Pro Monthly",
+          "subscriptionGroupID" : "21610837",
+          "type" : "RecurringSubscription",
+          "winBackOffers" : [
+
+          ]
+        }
+      ]
+    }
+  ],
+  "version" : {
+    "major" : 4,
+    "minor" : 0
+  }
+}
