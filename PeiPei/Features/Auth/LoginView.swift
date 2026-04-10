@@ -139,6 +139,13 @@ struct LoginView: View {
         }
 
         do {
+            // Configure server client ID so Google returns an ID token for our backend
+            let serverClientID = Bundle.main.object(forInfoDictionaryKey: "GIDServerClientID") as? String
+            let hint = GIDSignIn.sharedInstance.configuration.flatMap { _ in serverClientID }
+            if let serverID = serverClientID {
+                GIDSignIn.sharedInstance.configuration = GIDConfiguration(clientID: Bundle.main.object(forInfoDictionaryKey: "GIDClientID") as? String ?? "", serverClientID: serverID)
+            }
+
             let result = try await GIDSignIn.sharedInstance.signIn(withPresenting: rootVC)
             guard let idToken = result.user.idToken?.tokenString else {
                 app.errorMessage = "Missing Google ID token."
