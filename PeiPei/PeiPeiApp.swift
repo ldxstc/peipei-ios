@@ -3,7 +3,11 @@ import SwiftUI
 
 @main
 struct PeiPeiApp: App {
-    @State private var appModel = AppModel()
+    @State private var appModel: AppModel = {
+        let model = AppModel()
+        AppModel.shared = model
+        return model
+    }()
 
     var body: some Scene {
         WindowGroup {

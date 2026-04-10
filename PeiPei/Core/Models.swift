@@ -311,6 +311,14 @@ enum JSONValue: Codable, Hashable, Sendable {
 
 // MARK: - Similar Training Models
 
+struct UploadResult: Codable, Sendable {
+    let id: String
+    let url: String
+    let mediaType: String
+    let filename: String
+    let size: Int
+}
+
 struct SimilarActivity: Codable, Identifiable, Hashable, Sendable {
     let id: String
     let activityDate: String

@@ -5,6 +5,7 @@ import Observation
 @MainActor
 @Observable
 final class AppModel {
+    static weak var shared: AppModel?
     enum StartupState {
         case launching
         case loggedOut
@@ -120,6 +121,20 @@ final class AppModel {
     func refreshConversation() async {
         do {
             try await refreshAllData()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func sendMessageWithImage(_ text: String, image: UIImage) async {
+        guard let token = sessionToken, !token.isEmpty else { return }
+        do {
+            // Upload image first
+            let upload = try await api.uploadImage(token: token, image: image)
+            // Send message with attachment reference
+            let messageText = text.isEmpty ? "[Photo]" : text
+            let content = "\(messageText)\n\n[file: \(upload.url)]"
+            await sendMessage(content)
         } catch {
             errorMessage = error.localizedDescription
         }

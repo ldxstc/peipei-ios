@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 struct APIClient: Sendable {
     static let shared = APIClient()
@@ -74,6 +75,37 @@ struct APIClient: Sendable {
 
     func patchSettings(token: String, input: SettingsSaveInput) async throws {
         let _: JSONValue = try await request(path: "/api/settings", method: "PATCH", body: input, token: token)
+    }
+
+    func syncAppleSubscription(token: String, originalTransactionId: String, productId: String, environment: String) async throws {
+        let body: [String: String] = [
+            "originalTransactionId": originalTransactionId,
+            "productId": productId,
+            "environment": environment
+        ]
+        let _: JSONValue = try await request(path: "/api/subscription/apple", method: "POST", body: body, token: token)
+    }
+
+    func uploadImage(token: String, image: UIImage) async throws -> UploadResult {
+        guard let data = image.jpegData(compressionQuality: 0.8) else {
+            throw APIError.httpStatus(400, "Could not compress image.")
+        }
+
+        let boundary = UUID().uuidString
+        var request = makeRequest(path: "/api/upload", method: "POST", token: token)
+        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+        body.append("--\(boundary)\r\n".data(using: .utf8)!)
+        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"photo.jpg\"\r\n".data(using: .utf8)!)
+        body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
+        body.append(data)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        request.httpBody = body
+
+        let (responseData, response) = try await session.data(for: request)
+        try validate(response: response, data: responseData)
+        return try JSONDecoder().decode(UploadResult.self, from: responseData)
     }
 
     func getSimilarTrainings(token: String, activityId: String) async throws -> SimilarTrainingsResult {

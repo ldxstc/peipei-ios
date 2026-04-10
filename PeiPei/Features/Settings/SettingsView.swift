@@ -11,6 +11,7 @@ struct SettingsView: View {
     @State private var garminPassword = ""
     @State private var garminConnecting = false
     @State private var garminError: String?
+    @State private var showPaywall = false
 
     var body: some View {
         Form {
@@ -68,7 +69,20 @@ struct SettingsView: View {
 
             Section("Account") {
                 LabeledContent("Email", value: app.settingsPanel?.accountEmail ?? app.currentUser?.email ?? "--")
-                LabeledContent("Tier", value: app.settingsPanel?.billing.tierLabel ?? "Free")
+                Button {
+                    showPaywall = true
+                } label: {
+                    HStack {
+                        Text("Tier")
+                            .foregroundStyle(DesignTokens.textPrimary)
+                        Spacer()
+                        Text(app.settingsPanel?.billing.tierLabel ?? "Free")
+                            .foregroundStyle(DesignTokens.textSecondary)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12))
+                            .foregroundStyle(DesignTokens.textMuted)
+                    }
+                }
             }
 
             Section {
@@ -103,6 +117,12 @@ struct SettingsView: View {
                 }
                 .foregroundStyle(DesignTokens.textSecondary)
             }
+        }
+        .sheet(isPresented: $showPaywall) {
+            NavigationStack {
+                PaywallView()
+            }
+            .presentationBackground(DesignTokens.background)
         }
         .task {
             displayName = app.settingsPanel?.displayName ?? app.currentUser?.name ?? ""

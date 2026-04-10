@@ -73,6 +73,12 @@ struct ConversationView: View {
                 Task {
                     await app.sendMessage(value)
                 }
+            } onSendWithImage: { image in
+                let value = composerText
+                composerText = ""
+                Task {
+                    await app.sendMessageWithImage(value, image: image)
+                }
             }
         }
         .background(DesignTokens.background)
