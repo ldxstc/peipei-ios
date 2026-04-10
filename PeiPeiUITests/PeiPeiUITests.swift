@@ -386,7 +386,7 @@ final class RunDetailTests: XCTestCase {
 
     func testTapMetricsOpensRunDetail() throws {
         // Find a metrics line (monospace numbers like "5.2 km · 4:47 · 160")
-        let metricsWithDot = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'km' AND label CONTAINS '\u00b7'")).firstMatch
+        let metricsWithDot = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'km' AND label CONTAINS '\u{00b7}'")).firstMatch
         let metricsSimple = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'km'")).firstMatch
         let metrics = metricsWithDot.waitForExistence(timeout: 5) ? metricsWithDot :
                       metricsSimple.waitForExistence(timeout: 3) ? metricsSimple : nil
