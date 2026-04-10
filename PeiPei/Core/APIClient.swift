@@ -73,19 +73,7 @@ struct APIClient: Sendable {
     }
 
     func patchSettings(token: String, input: SettingsSaveInput) async throws {
-        do {
-            let _: JSONValue = try await request(path: "/api/settings", method: "PATCH", body: input, token: token)
-        } catch {
-            let fallback = LegacySettingsPatchRequest(
-                customInstructions: input.customInstructions,
-                profile: LegacySettingsProfile(
-                    coachLanguage: input.coachLanguage.rawValue,
-                    displayName: input.displayName,
-                    units: input.units.rawValue
-                )
-            )
-            let _: JSONValue = try await request(path: "/api/user/settings", method: "PATCH", body: fallback, token: token)
-        }
+        let _: JSONValue = try await request(path: "/api/settings", method: "PATCH", body: input, token: token)
     }
 
     func getSimilarTrainings(token: String, activityId: String) async throws -> SimilarTrainingsResult {
