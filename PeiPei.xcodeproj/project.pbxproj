@@ -15,6 +15,7 @@
 		155540385355F57AE138B0AE /* CoachEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C46A66688E41DA3C2BA080A2 /* CoachEntry.swift */; };
 		179207429C848FC71F4F1AEE /* AppModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B9B46E6CCDE31BC0E600C00 /* AppModel.swift */; };
 		19D35F0BE1AAA6F87A5ACE69 /* SimilarTrainingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 48FDA79DD0D6FFB5D49B8052 /* SimilarTrainingView.swift */; };
+		20FD76820CDE18C87F46813F /* PeiPeiProducts.storekit in Resources */ = {isa = PBXBuildFile; fileRef = 8AAA4CF43741071AB6ED3E2F /* PeiPeiProducts.storekit */; };
 		2743D9307B37D410F3D1BA6E /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504A3ECC64732183D1F298B6 /* Models.swift */; };
 		394241DE90CDC9201E138DB3 /* PaywallView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2E2CDD6CDECC441C526E25E /* PaywallView.swift */; };
 		5414FB054AFC3D4F6464E344 /* MetricExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3F1E21B71FF977D3299B659 /* MetricExtractor.swift */; };
@@ -57,6 +58,7 @@
 		876156C66285B876D82771AF /* PeiPeiApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeiPeiApp.swift; sourceTree = "<group>"; };
 		87A8E064F5563203C705572F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		8938750CAD1707E43441B5FA /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
+		8AAA4CF43741071AB6ED3E2F /* PeiPeiProducts.storekit */ = {isa = PBXFileReference; path = PeiPeiProducts.storekit; sourceTree = "<group>"; };
 		8B9B46E6CCDE31BC0E600C00 /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppModel.swift; sourceTree = "<group>"; };
 		8FB91B64D0B10038953BC7FE /* LoginView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginView.swift; sourceTree = "<group>"; };
 		92AA89781FFE69C01456DAF2 /* SignalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalView.swift; sourceTree = "<group>"; };
@@ -158,6 +160,7 @@
 			children = (
 				5AE0EAC40CDCDFA70E314ED3 /* Info.plist */,
 				876156C66285B876D82771AF /* PeiPeiApp.swift */,
+				8AAA4CF43741071AB6ED3E2F /* PeiPeiProducts.storekit */,
 				47D5A529922D4F8F69BB7C7B /* Core */,
 				D7FEA5F98362866D40C9CA48 /* Features */,
 				7757A82521E69DBDDF99E57C /* Resources */,
@@ -294,6 +297,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				CDF496C4B7887FDB8492740D /* Assets.xcassets in Resources */,
+				20FD76820CDE18C87F46813F /* PeiPeiProducts.storekit in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -452,7 +456,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 3.0.11;
+				MARKETING_VERSION = 3.0.13;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -536,7 +540,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 3.0.11;
+				MARKETING_VERSION = 3.0.13;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;

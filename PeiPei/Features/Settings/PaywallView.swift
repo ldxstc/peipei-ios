@@ -66,28 +66,38 @@ struct PaywallView: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
                             }
                             .disabled(store.purchaseState == .purchasing)
-                        } else if let error = store.loadError {
+                        } else {
+                            // Product not loaded yet — show fallback subscribe button
                             VStack(spacing: 12) {
-                                Text(error)
-                                    .font(.caption)
-                                    .foregroundStyle(DesignTokens.textSecondary)
-                                    .multilineTextAlignment(.center)
-
                                 Button {
-                                    Task { await store.loadProducts() }
+                                    Task {
+                                        await store.loadProducts()
+                                        if !store.products.isEmpty {
+                                            await store.purchase()
+                                        }
+                                    }
                                 } label: {
-                                    Text("Try Again")
-                                        .font(.system(size: 15, weight: .medium))
-                                        .foregroundStyle(DesignTokens.garnet)
+                                    VStack(spacing: 4) {
+                                        Text("Subscribe")
+                                            .font(.system(size: 17, weight: .semibold))
+                                        Text("$19.99/month")
+                                            .font(.system(size: 13))
+                                            .opacity(0.8)
+                                    }
+                                    .foregroundStyle(.white)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 16)
+                                    .background(DesignTokens.garnet)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                }
+
+                                if let error = store.loadError {
+                                    Text(error)
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(DesignTokens.textMuted)
+                                        .multilineTextAlignment(.center)
                                 }
                             }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                        } else {
-                            ProgressView()
-                                .tint(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 16)
                         }
 
                         // Restore

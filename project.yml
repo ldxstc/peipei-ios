@@ -26,6 +26,7 @@ schemes:
         - PeiPeiUITests
     run:
       config: Debug
+      storeKitConfiguration: PeiPei/PeiPeiProducts.storekit
 targets:
   PeiPei:
     type: application
