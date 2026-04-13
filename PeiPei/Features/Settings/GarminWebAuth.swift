@@ -128,10 +128,9 @@ class GarminLoginVC: UIViewController, WKNavigationDelegate {
         view.addSubview(webView)
 
         // Load the Garmin connect page
-        let url = URL(string: "\(baseURL)/garmin/connect")!
-        var request = URLRequest(url: url)
-        request.addValue(sessionToken, forHTTPHeaderField: "X-Session-Token")
-        webView.load(request)
+        // Pass session token as query param so the web page can use it in fetch headers
+        let url = URL(string: "\(baseURL)/garmin/connect?token=\(sessionToken)")!
+        webView.load(URLRequest(url: url))
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
