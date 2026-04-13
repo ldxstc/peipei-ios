@@ -65,12 +65,15 @@ struct APIClient: Sendable {
     }
 
     func connectGarmin(token: String, email: String, password: String) async throws {
-        let _: JSONValue = try await request(
+        let result: GarminAuthResponse = try await request(
             path: "/api/garmin/auth",
             method: "POST",
             body: ["email": email, "password": password],
             token: token
         )
+        if !result.success {
+            throw APIError.httpStatus(400, result.error ?? "Garmin connection failed.")
+        }
     }
 
     func patchSettings(token: String, input: SettingsSaveInput) async throws {
@@ -283,6 +286,16 @@ private struct AppleSignInRequest: Codable {
 private struct GoogleTokenPayload: Codable {
     let token: String
     let accessToken: String
+}
+
+private struct GarminAuthResponse: Codable {
+    let success: Bool
+    let error: String?
+    let profile: GarminProfile?
+
+    struct GarminProfile: Codable {
+        let displayName: String?
+    }
 }
 
 private struct GoogleSignInRequest: Codable {
