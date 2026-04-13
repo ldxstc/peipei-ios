@@ -177,23 +177,41 @@ struct APIClient: Sendable {
                 continue
             }
 
-            // Raw text chunk (no SSE envelope)
-            await onTextChunk(trimmed)
+            // Raw text chunk (no SSE envelope) — filter tool protocol
+            if let cleaned = parseStreamChunk(trimmed) {
+                await onTextChunk(cleaned)
+            }
         }
     }
 
     private func parseStreamChunk(_ raw: String) -> String? {
+        // Try to decode as a typed stream chunk (text delta)
         if let data = raw.data(using: .utf8),
            let json = try? JSONDecoder().decode(StreamChunkPayload.self, from: data),
            let text = json.textChunk {
             return text
         }
 
+        // Try to decode as a plain quoted string
         if raw.hasPrefix("\""), raw.hasSuffix("\""),
            let data = raw.data(using: .utf8),
            let text = try? JSONDecoder().decode(String.self, from: data) {
             return text
         }
+
+        // Filter out tool protocol JSON — these are NOT text content
+        if raw.contains("\"type\":\"tool-") ||
+           raw.contains("\"toolCallId\"") ||
+           raw.contains("\"toolName\"") ||
+           raw.contains("\"providerMetadata\"") ||
+           raw.contains("\"type\":\"step-") ||
+           raw.contains("\"type\":\"start\"") ||
+           raw.contains("\"type\":\"finish\"") {
+            return nil  // Skip tool protocol chunks
+        }
+
+        // Only return raw text if it doesn't look like JSON
+        if raw.hasPrefix("{") { return nil }
 
         return raw
     }
