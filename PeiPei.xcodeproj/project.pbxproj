@@ -31,6 +31,7 @@
 		C68424BD8E17FF93FB81D67A /* LoginView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FB91B64D0B10038953BC7FE /* LoginView.swift */; };
 		C698DB68F0294B45FE4715A7 /* SignalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92AA89781FFE69C01456DAF2 /* SignalView.swift */; };
 		CDF496C4B7887FDB8492740D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 87A8E064F5563203C705572F /* Assets.xcassets */; };
+		DAB56ABBC80F8A7F788FF4C4 /* GarminWebAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 645DA6B0C9FC46ECD94090F8 /* GarminWebAuth.swift */; };
 		EF72F249B55120D3276A284F /* PeiPeiUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B8F88510960EC3D418272B3 /* PeiPeiUITests.swift */; };
 /* End PBXBuildFile section */
 
@@ -53,6 +54,7 @@
 		543E3F6BDD82A463E199575E /* RunnerNote.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerNote.swift; sourceTree = "<group>"; };
 		5AE0EAC40CDCDFA70E314ED3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		5E814613108E9B52E173F4AD /* RunDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunDetailView.swift; sourceTree = "<group>"; };
+		645DA6B0C9FC46ECD94090F8 /* GarminWebAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GarminWebAuth.swift; sourceTree = "<group>"; };
 		6570A7B0909E4F54AC08427F /* MarkupCleaner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MarkupCleaner.swift; sourceTree = "<group>"; };
 		83A542A78338597FE43E37FC /* DesignTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignTokens.swift; sourceTree = "<group>"; };
 		876156C66285B876D82771AF /* PeiPeiApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeiPeiApp.swift; sourceTree = "<group>"; };
@@ -149,6 +151,7 @@
 		95AB64C85E06A4F100014577 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
+				645DA6B0C9FC46ECD94090F8 /* GarminWebAuth.swift */,
 				E2E2CDD6CDECC441C526E25E /* PaywallView.swift */,
 				F1C7EB466B1085204715B8CC /* SettingsView.swift */,
 			);
@@ -314,6 +317,7 @@
 				C613C6073A8B291E96DD1071 /* ComposerView.swift in Sources */,
 				0A6159651CAAE3EB6F6B3DBD /* ConversationView.swift in Sources */,
 				0A77BE5B18E71F9EB884CFBB /* DesignTokens.swift in Sources */,
+				DAB56ABBC80F8A7F788FF4C4 /* GarminWebAuth.swift in Sources */,
 				C2C83BE65840C31608E7C25D /* KeychainHelper.swift in Sources */,
 				BD24A4ADF103EE4D50E14E06 /* LogView.swift in Sources */,
 				C68424BD8E17FF93FB81D67A /* LoginView.swift in Sources */,
@@ -456,7 +460,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 3.0.13;
+				MARKETING_VERSION = 3.0.16;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -540,7 +544,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				MARKETING_VERSION = 3.0.13;
+				MARKETING_VERSION = 3.0.16;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;

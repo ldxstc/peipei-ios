@@ -42,28 +42,7 @@ struct SettingsView: View {
                 } else {
                     LabeledContent("Status", value: "Disconnected")
                         .foregroundStyle(.secondary)
-                    TextField("Garmin email", text: $garminEmail)
-                        .textContentType(.emailAddress)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                    SecureField("Garmin password", text: $garminPassword)
-                        .textContentType(.password)
-                    if let error = garminError {
-                        Text(error)
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                    }
-                    Button {
-                        Task { await connectGarmin() }
-                    } label: {
-                        if garminConnecting {
-                            ProgressView()
-                        } else {
-                            Text("Connect Garmin")
-                        }
-                    }
-                    .disabled(garminEmail.isEmpty || garminPassword.isEmpty || garminConnecting)
-                    .foregroundStyle(DesignTokens.garnet)
+                    GarminWebAuthButton()
                 }
             }
 
