@@ -136,15 +136,6 @@ class GarminLoginVC: UIViewController, WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         if let url = navigationAction.request.url {
-            // Check if this is the success callback
-            if url.absoluteString.contains("garmin-connected") || url.absoluteString.contains("garmin/callback") {
-                // Check if there's a success indicator
-                if url.absoluteString.contains("success=true") {
-                    onSuccess()
-                    decisionHandler(.cancel)
-                    return
-                }
-            }
             // Check for peipei:// deep link
             if url.scheme == "peipei" {
                 onSuccess()
@@ -153,6 +144,15 @@ class GarminLoginVC: UIViewController, WKNavigationDelegate {
             }
         }
         decisionHandler(.allow)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        // Poll for success indicator on the page
+        webView.evaluateJavaScript("document.getElementById('garmin-success')?.textContent") { [weak self] result, _ in
+            if let text = result as? String, text == "SUCCESS" {
+                self?.onSuccess()
+            }
+        }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
