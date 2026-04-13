@@ -407,8 +407,8 @@ private enum SettingsNormalizer {
                 tierLabel: tier
             ),
             garmin: GarminData(
-                connected: firstPresent(raw, paths: ["garmin.connected", "garmin.isConnected", "garmin.status", "integrations.garmin.connected"])?.boolScalar ?? false,
-                email: firstPresent(raw, paths: ["garmin.email", "garmin.accountEmail", "integrations.garmin.email", "garmin.userEmail"])?.stringScalar ?? ""
+                connected: firstPresent(raw, paths: ["garminConnected", "garmin.connected", "garmin.isConnected", "integrations.garmin.connected"])?.boolScalar ?? false,
+                email: firstPresent(raw, paths: ["garminEmail", "garmin.email", "garmin.accountEmail", "integrations.garmin.email"])?.stringScalar ?? ""
             ),
             raw: raw
         )
