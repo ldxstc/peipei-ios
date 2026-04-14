@@ -76,6 +76,14 @@ struct APIClient: Sendable {
         }
     }
 
+    func syncGarmin(token: String) async throws {
+        let _: JSONValue = try await request(path: "/api/garmin/sync", method: "POST", body: [String: String](), token: token)
+    }
+
+    func disconnectGarmin(token: String) async throws {
+        let _: JSONValue = try await request(path: "/api/garmin/auth", method: "DELETE", body: [String: String](), token: token)
+    }
+
     func patchSettings(token: String, input: SettingsSaveInput) async throws {
         let _: JSONValue = try await request(path: "/api/settings", method: "PATCH", body: input, token: token)
     }

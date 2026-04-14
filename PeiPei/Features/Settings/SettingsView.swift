@@ -39,6 +39,31 @@ struct SettingsView: View {
                     if let email = app.settingsPanel?.garmin.email, !email.isEmpty {
                         LabeledContent("Email", value: email)
                     }
+
+                    // Sync Now button
+                    Button {
+                        Task { await syncGarmin() }
+                    } label: {
+                        if garminConnecting {
+                            HStack(spacing: 8) {
+                                ProgressView().tint(.white)
+                                Text("Syncing...")
+                            }
+                        } else {
+                            Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
+                        }
+                    }
+                    .disabled(garminConnecting)
+                    .foregroundStyle(DesignTokens.garnet)
+
+                    // Disconnect button
+                    Button("Disconnect Garmin", role: .destructive) {
+                        Task { await disconnectGarmin() }
+                    }
+
+                    if let error = garminError {
+                        Text(error).font(.caption).foregroundStyle(.red)
+                    }
                 } else {
                     LabeledContent("Status", value: "Disconnected")
                         .foregroundStyle(.secondary)
@@ -133,6 +158,30 @@ struct SettingsView: View {
             }
         } catch {
             garminError = error.localizedDescription
+        }
+    }
+
+    private func syncGarmin() async {
+        garminConnecting = true
+        garminError = nil
+        defer { garminConnecting = false }
+
+        guard let token = app.sessionToken else { return }
+        do {
+            try await app.api.syncGarmin(token: token)
+            try? await app.refreshAllData()
+        } catch {
+            garminError = "Sync failed: \(error.localizedDescription)"
+        }
+    }
+
+    private func disconnectGarmin() async {
+        guard let token = app.sessionToken else { return }
+        do {
+            try await app.api.disconnectGarmin(token: token)
+            try? await app.refreshAllData()
+        } catch {
+            garminError = "Disconnect failed."
         }
     }
 }
