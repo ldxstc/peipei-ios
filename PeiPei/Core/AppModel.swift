@@ -170,11 +170,16 @@ final class AppModel {
                 await MainActor.run {
                     guard let self else { return }
                     if let index = self.messages.firstIndex(where: { $0.id == assistantID }) {
+                        // Append chunk directly — parseStreamChunk already filters tool JSON
                         self.messages[index].content += chunk
-                        self.messages[index].content = MarkupCleaner.clean(self.messages[index].content)
-                        self.directive = MetricExtractor.deriveDirective(from: self.messages, sidebar: self.sidebarData)
                     }
                 }
+            }
+
+            // Clean once after streaming finishes
+            if let index = messages.firstIndex(where: { $0.id == assistantID }) {
+                messages[index].content = MarkupCleaner.clean(messages[index].content)
+                directive = MetricExtractor.deriveDirective(from: messages, sidebar: sidebarData)
             }
         } catch {
             errorMessage = error.localizedDescription

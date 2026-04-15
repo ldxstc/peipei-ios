@@ -36,7 +36,7 @@ struct ConversationView: View {
                             sectionHeader(section.dateLabel)
                             ForEach(section.messages) { message in
                                 if message.role == .assistant {
-                                    CoachEntry(message: message) {
+                                    CoachEntry(message: message, isLatest: message.id == app.messages.last(where: { $0.role == .assistant })?.id) {
                                         selectedRun = MetricExtractor.runDetail(from: message)
                                     }
                                     // Show Connect Garmin card if message mentions it and not connected

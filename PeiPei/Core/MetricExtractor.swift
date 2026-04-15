@@ -56,7 +56,7 @@ enum MetricExtractor {
     static func headlineAndBody(from text: String) -> (headline: String, body: String) {
         let cleaned = MarkupCleaner.clean(text)
         guard !cleaned.isEmpty else {
-            return ("No update yet.", "")
+            return ("", "")
         }
 
         // Split on paragraph breaks first
