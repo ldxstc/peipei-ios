@@ -394,9 +394,9 @@ private enum SidebarDataNormalizer {
             ),
             recentRuns: Array(recentRuns),
             thisWeek: WeekSummary(
-                km: firstPresent(raw, paths: ["thisWeek.km", "week.km", "stats.km", "thisWeek.distance", "totalKm"])?.stringScalar ?? "0",
-                runs: firstPresent(raw, paths: ["thisWeek.runs", "week.runs", "stats.runs", "runCount"])?.stringScalar ?? "0",
-                avgPace: firstPresent(raw, paths: ["thisWeek.avgPace", "week.avgPace", "stats.avgPace", "avgPaceSeconds"])?.stringScalar ?? "--"
+                km: firstPresent(raw, paths: ["thisWeek.totalKm", "thisWeek.km", "week.km", "stats.km", "thisWeek.distance"])?.stringScalar ?? "0",
+                runs: firstPresent(raw, paths: ["thisWeek.runCount", "thisWeek.runs", "week.runs", "stats.runs"])?.stringScalar ?? "0",
+                avgPace: firstPresent(raw, paths: ["thisWeek.avgPaceSeconds", "thisWeek.avgPace", "week.avgPace", "stats.avgPace"])?.stringScalar ?? "--"
             ),
             todayPlan: TodayPlan(
                 title: firstPresent(raw, paths: ["todayPlan.title", "todayPlan.type", "todayWorkout.title", "todayWorkout.type", "workoutToday.title"])?.stringScalar ?? "Check today's plan",
@@ -407,21 +407,32 @@ private enum SidebarDataNormalizer {
     }
 
     private static func normalizeRecentRun(_ raw: JSONValue) -> RecentRun {
-        let detail = firstPresent(raw, paths: ["detail", "time", "type", "duration"])?.stringScalar ?? ""
-        let distance = firstPresent(raw, paths: ["distance", "distanceLabel", "km", "miles"])?.stringScalar ?? ""
-        let pace = firstPresent(raw, paths: ["pace", "paceLabel", "avgPace", "averagePace"])?.stringScalar ?? ""
-        let distKm: Double = {
-            if let raw = firstPresent(raw, paths: ["distanceKm", "distance_km"])?.stringScalar, let v = Double(raw) { return v }
-            let num = distance.replacingOccurrences(of: #"[^\d.]"#, with: "", options: .regularExpression)
-            return Double(num) ?? 0
+        let id = firstPresent(raw, paths: ["id", "runId"])?.stringScalar ?? UUID().uuidString
+        let wtype = firstPresent(raw, paths: ["workoutType", "type"])?.stringScalar ?? "easy"
+        let distKmStr = firstPresent(raw, paths: ["distanceKm", "distance_km", "distance"])?.stringScalar ?? "0"
+        let distKm = Double(distKmStr) ?? 0
+        let paceStr = firstPresent(raw, paths: ["pacePerKmSeconds", "avgPaceSeconds", "pace"])?.stringScalar ?? ""
+        let date = firstPresent(raw, paths: ["activityDate", "date", "day"])?.stringScalar ?? ""
+        let hrStr = firstPresent(raw, paths: ["avgHr", "heartRate", "hr"])?.stringScalar ?? ""
+
+        // Format pace from seconds
+        let paceFormatted: String = {
+            guard let secs = Int(paceStr), secs > 0 else { return paceStr }
+            return "\(secs / 60):\(String(format: "%02d", secs % 60))/km"
         }()
+
+        // Format distance
+        let distFormatted = distKm > 0 ? String(format: "%.1fkm", distKm) : ""
+
+        let subtitle = [distFormatted, paceFormatted].filter { !$0.isEmpty }.joined(separator: " · ")
+
         return RecentRun(
-            id: firstPresent(raw, paths: ["id", "runId"])?.stringScalar ?? UUID().uuidString,
-            title: firstPresent(raw, paths: ["title", "date", "name", "day"])?.stringScalar ?? "Recent run",
-            subtitle: firstPresent(raw, paths: ["subtitle", "summary"])?.stringScalar ?? [distance, pace].filter { !$0.isEmpty }.joined(separator: " · "),
-            detail: detail.isEmpty ? [distance, pace].filter { !$0.isEmpty }.joined(separator: " · ") : detail,
+            id: id,
+            title: wtype.capitalized,
+            subtitle: subtitle,
+            detail: hrStr.isEmpty ? subtitle : "\(subtitle) · \(hrStr) bpm",
             distanceKm: distKm,
-            workoutType: firstPresent(raw, paths: ["workoutType", "type"])?.stringScalar ?? ""
+            workoutType: wtype
         )
     }
 }
