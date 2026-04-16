@@ -410,11 +410,18 @@ private enum SidebarDataNormalizer {
         let detail = firstPresent(raw, paths: ["detail", "time", "type", "duration"])?.stringScalar ?? ""
         let distance = firstPresent(raw, paths: ["distance", "distanceLabel", "km", "miles"])?.stringScalar ?? ""
         let pace = firstPresent(raw, paths: ["pace", "paceLabel", "avgPace", "averagePace"])?.stringScalar ?? ""
+        let distKm: Double = {
+            if let raw = firstPresent(raw, paths: ["distanceKm", "distance_km"])?.stringScalar, let v = Double(raw) { return v }
+            let num = distance.replacingOccurrences(of: #"[^\d.]"#, with: "", options: .regularExpression)
+            return Double(num) ?? 0
+        }()
         return RecentRun(
             id: firstPresent(raw, paths: ["id", "runId"])?.stringScalar ?? UUID().uuidString,
             title: firstPresent(raw, paths: ["title", "date", "name", "day"])?.stringScalar ?? "Recent run",
             subtitle: firstPresent(raw, paths: ["subtitle", "summary"])?.stringScalar ?? [distance, pace].filter { !$0.isEmpty }.joined(separator: " · "),
-            detail: detail.isEmpty ? [distance, pace].filter { !$0.isEmpty }.joined(separator: " · ") : detail
+            detail: detail.isEmpty ? [distance, pace].filter { !$0.isEmpty }.joined(separator: " · ") : detail,
+            distanceKm: distKm,
+            workoutType: firstPresent(raw, paths: ["workoutType", "type"])?.stringScalar ?? ""
         )
     }
 }

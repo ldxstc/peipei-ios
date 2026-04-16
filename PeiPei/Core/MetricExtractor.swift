@@ -173,7 +173,7 @@ enum MetricExtractor {
         return "\(title) · \(countdown)"
     }
 
-    static func runDetail(from message: CoachMessage) -> RunDetail {
+    static func runDetail(from message: CoachMessage, sidebarData: SidebarData? = nil) -> RunDetail {
         let metrics = metricsLine(from: message.content).split(separator: "·").map {
             $0.trimmingCharacters(in: .whitespaces)
         }
@@ -202,8 +202,35 @@ enum MetricExtractor {
             cadence: "203 spm",
             coachTake: [narrative.headline, narrative.body].filter { !$0.isEmpty }.joined(separator: "\n\n"),
             splits: splits,
-            activityId: message.id
+            activityId: matchActivityId(message: message, sidebar: sidebarData)
         )
+    }
+
+    /// Try to match a coach message to a sidebar activity by workout type and distance
+    private static func matchActivityId(message: CoachMessage, sidebar: SidebarData?) -> String? {
+        guard let sidebar else { return nil }
+        let recentRuns = sidebar.recentRuns
+        let msgMetrics = metricsLine(from: message.content)
+
+        // Extract distance from metrics (e.g. "23 km" → 23.0)
+        let distPattern = #"(\d+(?:\.\d+)?)\s*km"#
+        let msgDist: Double? = {
+            guard let match = msgMetrics.range(of: distPattern, options: .regularExpression) else { return nil }
+            let numStr = msgMetrics[match].replacingOccurrences(of: #"\s*km"#, with: "", options: .regularExpression)
+            return Double(numStr)
+        }()
+
+        // Match by approximate distance
+        if let msgDist {
+            for run in recentRuns {
+                if abs(run.distanceKm - msgDist) < 1.5 {
+                    return run.id
+                }
+            }
+        }
+
+        // Return the first recent run as fallback
+        return recentRuns.first?.id
     }
 
     private static func firstMatch(in text: String, pattern: String) -> String? {

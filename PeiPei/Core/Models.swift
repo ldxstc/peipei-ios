@@ -132,6 +132,8 @@ struct RecentRun: Codable, Identifiable, Hashable, Sendable {
     let title: String
     let subtitle: String
     let detail: String
+    let distanceKm: Double
+    let workoutType: String
 }
 
 struct WeekSummary: Codable, Hashable, Sendable {
