@@ -7,11 +7,19 @@ struct SignalView: View {
     #else
     @State private var showConversation = false
     #endif
-    @State private var showReasoning = false
     @State private var showPlan = false
+    @State private var breathOpacity: Double = 0.3
 
     private var directive: DirectiveContent {
         app.directive
+    }
+
+    private var weekSummary: String? {
+        guard let sidebar = app.sidebarData else { return nil }
+        let km = sidebar.thisWeek.km
+        let runs = sidebar.thisWeek.runs
+        guard km != "0" && !km.isEmpty else { return nil }
+        return "\(km) km this week · \(runs) run\(runs == "1" ? "" : "s")"
     }
 
     var body: some View {
@@ -21,54 +29,62 @@ struct SignalView: View {
             VStack(spacing: 0) {
                 Spacer()
 
-                // Main directive
-                VStack(spacing: 12) {
-                    Text(directive.instruction)
-                        .font(.system(size: 26, weight: .light))
-                        .foregroundStyle(.white)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(3)
-
-                    if let reasoning = directive.reasoning, !reasoning.isEmpty {
-                        Text(reasoning)
-                            .font(.system(size: 14, weight: .regular, design: .monospaced))
-                            .foregroundStyle(DesignTokens.textSecondary)
-                            .multilineTextAlignment(.center)
+                // Breathing dot
+                Circle()
+                    .fill(.white)
+                    .frame(width: 4, height: 4)
+                    .opacity(breathOpacity)
+                    .onAppear {
+                        withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true)) {
+                            breathOpacity = 0.7
+                        }
                     }
+                    .padding(.bottom, 32)
+
+                // Directive — main training info
+                Text(directive.instruction)
+                    .font(.system(size: 22, weight: .light))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(4)
+                    .padding(.horizontal, 40)
+
+                // Week summary
+                if let summary = weekSummary ?? directive.reasoning {
+                    Text(summary)
+                        .font(.system(size: 13, weight: .regular, design: .monospaced))
+                        .foregroundStyle(DesignTokens.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 16)
                 }
-                .padding(.horizontal, 32)
 
                 Spacer()
 
-                // Race countdown
+                // Race countdown at bottom
                 if let countdown = directive.raceCountdown {
                     Button {
                         showPlan = true
                     } label: {
                         Text(countdown)
-                            .font(.system(size: 11, weight: .regular, design: .monospaced))
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
                             .foregroundStyle(DesignTokens.garnet)
-                            .tracking(2)
+                            .tracking(1.5)
                             .textCase(.uppercase)
                     }
                     .buttonStyle(.plain)
-                    .padding(.bottom, 24)
+                    .padding(.bottom, 48)
+                } else {
+                    Text("NO RACE SET")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(Color.white.opacity(0.15))
+                        .tracking(2)
+                        .padding(.bottom, 48)
                 }
-
-                // Talk to coach button
-                Button {
-                    showConversation = true
-                } label: {
-                    Text("Talk to your coach")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 32)
-                        .padding(.vertical, 14)
-                        .background(DesignTokens.garnet)
-                        .clipShape(Capsule())
-                }
-                .padding(.bottom, 48)
             }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            showConversation = true
         }
         .sheet(isPresented: $showPlan) {
             NavigationStack {
