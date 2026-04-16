@@ -8,11 +8,13 @@ enum MetricExtractor {
         let hasPace = lowered.range(of: #"\d{1,2}:\d{2}\s*/km"#, options: .regularExpression) != nil
         let hasDistance = lowered.range(of: #"\d+(?:\.\d+)?\s*km"#, options: .regularExpression) != nil
         let hasHR = lowered.range(of: #"\d{2,3}\s*bpm"#, options: .regularExpression) != nil
-        // Or explicit workout keywords with numbers
+        // Or explicit workout keywords
         let hasWorkoutKeyword = lowered.contains("interval") || lowered.contains("tempo") ||
             lowered.contains("long run") || lowered.contains("recovery") ||
-            lowered.contains("race pace") || lowered.contains("轻松跑") ||
-            lowered.contains("间歇") || lowered.contains("配速") ||
+            lowered.contains("race pace") || lowered.contains("easy") ||
+            lowered.contains("轻松跑") || lowered.contains("间歇") || lowered.contains("配速") ||
+            lowered.contains("工作段") || lowered.contains("节奏跑") || lowered.contains("长距离") ||
+            lowered.contains("恢复跑") || lowered.contains("比赛") || lowered.contains("专项") ||
             lowered.contains("节奏跑") || lowered.contains("恢复跑")
         return hasPace || hasDistance || hasHR || hasWorkoutKeyword
     }
@@ -20,23 +22,38 @@ enum MetricExtractor {
     static func workoutType(for text: String) -> WorkoutType {
         let lowered = text.lowercased()
 
-        if lowered.contains("race pace") || lowered.contains("marathon pace") || lowered.contains("race") {
+        // Race
+        if lowered.contains("race pace") || lowered.contains("marathon pace") || lowered.contains("race") ||
+           lowered.contains("比赛") || lowered.contains("赛事") || lowered.contains("马拉松配速") {
             return .race
         }
-        if lowered.contains("interval") || lowered.contains("speed") || lowered.contains("repeat") {
+        // Interval
+        if lowered.contains("interval") || lowered.contains("speed") || lowered.contains("repeat") ||
+           lowered.contains("间歇") || lowered.contains("工作段") || lowered.contains("反复跑") ||
+           lowered.contains("速度训练") || lowered.contains("专项") {
             return .interval
         }
-        if lowered.contains("tempo") || lowered.contains("threshold") {
+        // Tempo
+        if lowered.contains("tempo") || lowered.contains("threshold") ||
+           lowered.contains("节奏跑") || lowered.contains("乳酸门槛") || lowered.contains("工作段") {
             return .tempo
         }
-        if lowered.contains("long run") || lowered.contains("long") {
+        // Long run
+        if lowered.contains("long run") || lowered.contains("long") ||
+           lowered.contains("长距离") || lowered.contains("长跑") || lowered.contains("LSD") {
             return .long
         }
-        if lowered.contains("recovery") {
+        // Recovery
+        if lowered.contains("recovery") || lowered.contains("恢复跑") || lowered.contains("恢复") {
             return .recovery
         }
-        if lowered.contains("rest") {
+        // Rest
+        if lowered.contains("rest") || lowered.contains("休息") {
             return .rest
+        }
+        // Easy
+        if lowered.contains("easy") || lowered.contains("轻松跑") || lowered.contains("慢跑") {
+            return .easy
         }
         return .easy
     }
