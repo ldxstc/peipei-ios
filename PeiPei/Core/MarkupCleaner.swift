@@ -36,6 +36,13 @@ enum MarkupCleaner {
         // This catches all tool protocol variants
         result = stripToolJSON(result)
 
+        // Strip unresolved template placeholders like [[data:trend:pace]], [[widget:splits]], etc.
+        result = result.replacingOccurrences(
+            of: #"\[\[[^\]]+\]\]"#,
+            with: "",
+            options: .regularExpression
+        )
+
         // Strip markdown
         result = result.replacingOccurrences(of: "```[\\s\\S]*?```", with: "", options: .regularExpression)
         result = result.replacingOccurrences(of: "`", with: "")
