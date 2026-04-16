@@ -93,18 +93,18 @@ enum MetricExtractor {
     }
 
     static func deriveDirective(from messages: [CoachMessage], sidebar: SidebarData?) -> DirectiveContent {
-        // Priority 1: Derive from sidebar todayPlan + goalProgress
+        let raceCountdown = sidebar.flatMap { buildRaceCountdown(from: $0.goalProgress) }
+
+        // Priority 1: Today's plan from sidebar
         if let sidebar {
             let planTitle = sidebar.todayPlan.title
             let planDistance = sidebar.todayPlan.distance
-            let hasPlan = !planTitle.isEmpty && planTitle != "Check today's plan"
+            let hasPlan = !planTitle.isEmpty && planTitle != "Check today's plan" && planTitle != "{}"
 
             if hasPlan {
                 let instruction = planDistance != "--" && !planDistance.isEmpty
                     ? "\(planTitle) — \(planDistance)"
                     : planTitle
-
-                let raceCountdown = buildRaceCountdown(from: sidebar.goalProgress)
 
                 return DirectiveContent(
                     instruction: instruction,
@@ -114,51 +114,60 @@ enum MetricExtractor {
             }
         }
 
-        // Fallback: Find the most recent training-related assistant message
-        let trainingMessage = messages.last(where: { $0.role == .assistant && hasRunData(in: $0.content) })
-        let lastAssistant = messages.last(where: { $0.role == .assistant })
-        let bestMessage = trainingMessage ?? lastAssistant
+        // Priority 2: Build from training data (this week + last run)
+        if let sidebar {
+            let weekKm = sidebar.thisWeek.km
+            let weekRuns = sidebar.thisWeek.runs
+            let hasWeekData = weekKm != "0" && !weekKm.isEmpty
 
-        let raceCountdown = sidebar.flatMap { buildRaceCountdown(from: $0.goalProgress) }
+            if hasWeekData {
+                // Build a data-driven directive
+                let weekSummary = "\(weekKm) km · \(weekRuns) run\(weekRuns == "1" ? "" : "s") this week"
 
-        guard let msg = bestMessage else {
-            return DirectiveContent(
-                instruction: "Preparing your plan...",
-                reasoning: nil,
-                raceCountdown: raceCountdown ?? sidebar?.goalProgress.countdown
-            )
+                // Find last run info
+                if let lastRun = sidebar.recentRuns.first {
+                    let instruction = "\(lastRun.title) — \(lastRun.subtitle)"
+                    return DirectiveContent(
+                        instruction: instruction,
+                        reasoning: weekSummary,
+                        raceCountdown: raceCountdown
+                    )
+                }
+
+                return DirectiveContent(
+                    instruction: weekSummary,
+                    reasoning: nil,
+                    raceCountdown: raceCountdown
+                )
+            }
         }
 
-        let cleaned = MarkupCleaner.clean(msg.content)
-
-        // If it's a training message, extract the workout type + metrics as directive
-        if hasRunData(in: msg.content) {
-            let wtype = workoutType(for: msg.content)
-            let metrics = metricsLine(from: msg.content)
+        // Priority 3: Find training-related message
+        if let trainingMsg = messages.last(where: { $0.role == .assistant && hasRunData(in: $0.content) }) {
+            let wtype = workoutType(for: trainingMsg.content)
+            let metrics = metricsLine(from: trainingMsg.content)
             let instruction = metrics.isEmpty ? wtype.label : "\(wtype.label) — \(metrics)"
             return DirectiveContent(
                 instruction: instruction,
                 reasoning: nil,
-                raceCountdown: raceCountdown ?? sidebar?.goalProgress.countdown
+                raceCountdown: raceCountdown
             )
         }
 
-        // General message — show a short summary
-        let split = headlineAndBody(from: cleaned)
-        var instruction = split.headline
-
-        // If headline is too short/uninformative (like "Hey."), use more of the message
-        if instruction.count < 20 && !split.body.isEmpty {
-            let combined = [split.headline, split.body].joined(separator: " ")
-            instruction = combined.count > 100 ? String(combined.prefix(100)) + "…" : combined
-        } else if instruction.count > 100 {
-            instruction = String(instruction.prefix(100)) + "…"
+        // Priority 4: New user or no data
+        if messages.isEmpty {
+            return DirectiveContent(
+                instruction: "Connect your Garmin to get started.",
+                reasoning: nil,
+                raceCountdown: nil
+            )
         }
 
+        // Priority 5: Generic fallback (never show random chat text)
         return DirectiveContent(
-            instruction: instruction.isEmpty ? "Preparing your plan..." : instruction,
+            instruction: "Your coach is ready.",
             reasoning: nil,
-            raceCountdown: raceCountdown ?? sidebar?.goalProgress.countdown
+            raceCountdown: raceCountdown
         )
     }
 
