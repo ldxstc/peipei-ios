@@ -18,6 +18,7 @@ final class AppModel {
     var messages: [CoachMessage] = []
     var sidebarData: SidebarData?
     var settingsPanel: SettingsPanelData?
+    var dailyRead: String?
     var directive = DirectiveContent(instruction: "Preparing your plan...", reasoning: nil, raceCountdown: nil)
     var errorMessage: String?
     var isSending = false
@@ -107,14 +108,17 @@ final class AppModel {
         async let chat = api.getCoachChat(token: token)
         async let sidebar = api.getSidebar(token: token)
         async let settings = api.getSettings(token: token)
+        async let read = api.getDailyRead(token: token)
 
         let chatResponse = try await chat
         let sidebarResponse = try await sidebar
         let settingsResponse = try await settings
+        let readResponse = try? await read // Don't fail if daily read errors
 
         messages = chatResponse.messages
         sidebarData = sidebarResponse
         settingsPanel = settingsResponse
+        dailyRead = readResponse?.read
         directive = MetricExtractor.deriveDirective(from: messages, sidebar: sidebarData)
     }
 

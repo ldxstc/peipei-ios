@@ -54,6 +54,10 @@ struct APIClient: Sendable {
         return CoachChatResponse(messages: payload.messages, hasMore: payload.hasMore)
     }
 
+    func getDailyRead(token: String) async throws -> DailyReadResponse {
+        try await request(path: "/api/coach/daily-read", method: "GET", token: token)
+    }
+
     func getSidebar(token: String) async throws -> SidebarData {
         let payload: JSONValue = try await request(path: "/api/coach/sidebar", method: "GET", token: token)
         return SidebarDataNormalizer.normalize(payload)

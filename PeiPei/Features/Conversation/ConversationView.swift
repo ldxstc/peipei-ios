@@ -37,12 +37,9 @@ struct ConversationView: View {
                             ForEach(section.messages) { message in
                                 if message.role == .assistant {
                                     CoachEntry(message: message, isLatest: message.id == app.messages.last(where: { $0.role == .assistant })?.id) {
-                                        selectedRun = MetricExtractor.runDetail(from: message, sidebarData: app.sidebarData)
+                                        // Run detail accessed from Home screen
                                     }
-                                    // Show Connect Garmin card if message mentions it and not connected
-                                    if message.content.lowercased().contains("garmin") && app.settingsPanel?.garmin.connected != true {
-                                        garminConnectCard
-                                    }
+
                                 } else {
                                     RunnerNote(message: message)
                                 }

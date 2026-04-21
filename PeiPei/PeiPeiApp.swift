@@ -36,7 +36,7 @@ private struct RootView: View {
             case .loggedOut:
                 LoginView()
             case .loggedIn:
-                SignalView()
+                HomeView()
             }
         }
         .task {

@@ -196,6 +196,13 @@ struct SettingsSaveInput: Codable, Sendable {
     let customInstructions: String
 }
 
+struct DailyReadResponse: Codable, Sendable {
+    let read: String
+    let messageId: String?
+    let generatedAt: String?
+    let cached: Bool?
+}
+
 struct DirectiveContent: Hashable, Sendable {
     let instruction: String
     let reasoning: String?
