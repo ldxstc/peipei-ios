@@ -4,6 +4,17 @@ enum MarkupCleaner {
     static func clean(_ value: String) -> String {
         var result = value
 
+        // Strip thinking blocks
+        result = result.replacingOccurrences(
+            of: "<thinking>[\\s\\S]*?</thinking>",
+            with: "", options: .regularExpression
+        )
+        // Strip unclosed thinking tags (streaming mid-thought)
+        result = result.replacingOccurrences(
+            of: "<thinking>[\\s\\S]*$",
+            with: "", options: .regularExpression
+        )
+
         // Strip XML tool call tags and their contents
         result = result.replacingOccurrences(
             of: "<tool_calls>[\\s\\S]*?<\\/tool_calls>",

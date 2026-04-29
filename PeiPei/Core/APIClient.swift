@@ -165,10 +165,17 @@ struct APIClient: Sendable {
         let (bytes, response) = try await session.bytes(for: request)
         try validate(response: response, data: Data())
 
+        var isInsideThinking = false
+
         for try await line in bytes.lines {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !trimmed.isEmpty else { continue }
             if trimmed == "[DONE]" || trimmed == "data: [DONE]" { break }
+
+            // Track <thinking> blocks — suppress all content inside
+            if trimmed.contains("<thinking>") { isInsideThinking = true }
+            if trimmed.contains("</thinking>") { isInsideThinking = false; continue }
+            if isInsideThinking { continue }
 
             // SSE format: data: {...}
             if trimmed.hasPrefix("data:") {
@@ -209,6 +216,11 @@ struct APIClient: Sendable {
            let data = raw.data(using: .utf8),
            let text = try? JSONDecoder().decode(String.self, from: data) {
             return text
+        }
+
+        // Filter out thinking blocks
+        if raw.contains("<thinking>") || raw.contains("</thinking>") {
+            return nil
         }
 
         // Filter out tool protocol JSON — these are NOT text content
