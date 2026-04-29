@@ -9,7 +9,7 @@ settings:
   base:
     DEVELOPMENT_TEAM: MNB3V4MHFJ
     SWIFT_VERSION: "6.0"
-    MARKETING_VERSION: "3.0.30"
+    MARKETING_VERSION: "3.0.31"
     CURRENT_PROJECT_VERSION: "1"
 packages:
   GoogleSignIn:
@@ -47,7 +47,7 @@ targets:
       properties:
         CFBundleName: PeiPei
         CFBundleDisplayName: PeiPei
-        CFBundleShortVersionString: "3.0.30"
+        CFBundleShortVersionString: "3.0.31"
         CFBundleVersion: "1"
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
