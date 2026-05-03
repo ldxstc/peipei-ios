@@ -106,12 +106,13 @@ struct HomeView: View {
                     .font(.system(size: 18, weight: .light))
                     .foregroundStyle(.white)
                     .lineSpacing(6)
+                    .textSelection(.enabled)
             } else {
-                // Loading or no read yet
                 Text(app.directive.instruction)
                     .font(.system(size: 18, weight: .light))
                     .foregroundStyle(.white)
                     .lineSpacing(6)
+                    .textSelection(.enabled)
             }
         }
     }

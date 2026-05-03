@@ -32,6 +32,7 @@ struct CoachEntry: View {
                     .font(.system(.body, design: .serif))
                     .foregroundStyle(DesignTokens.textPrimary)
                     .lineSpacing(5)
+                    .textSelection(.enabled)
                     .onTapGesture(count: 2) {
                         if isExpanded || isLatest {
                             withAnimation(.easeOut(duration: 0.2)) {
