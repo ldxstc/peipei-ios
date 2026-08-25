@@ -94,12 +94,12 @@ IPA_PATH="/tmp/PeiPei-ship-export/PeiPei.ipa"
 echo "   IPA: $IPA_PATH"
 
 # Upload to App Store Connect
+# Modern altool prefers --upload-package. The older --upload-app path can fail
+# with misleading bundle/Apple ID errors even when the ASC app record is valid.
 echo "☁️  Uploading to App Store Connect..."
-xcrun altool --upload-app \
-    --type ios \
-    --file "$IPA_PATH" \
-    --apiKey "$ASC_KEY_ID" \
-    --apiIssuer "$ASC_ISSUER_ID"
+xcrun altool --upload-package "$IPA_PATH" \
+    --api-key "$ASC_KEY_ID" \
+    --api-issuer "$ASC_ISSUER_ID"
 
 echo "⏳ Waiting for Apple to process build..."
 echo "   (This typically takes 5-15 minutes)"
